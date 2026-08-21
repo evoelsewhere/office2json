@@ -38,6 +38,14 @@ describe('PowerPoint remaining-limit audit', () => {
     }
     expect(audit).toContain('slide-1-element-2-row-3-cell-1-run-1');
     expect(audit).toContain('slide-1-element-2-element-1-run-1');
+    expect(audit).toMatch(
+      /\| Tables\s+\|[^\n]+single plain cell-run replacement\s+\| Complete\s+\|/,
+    );
+    expect(audit).toMatch(
+      /\| Groups\s+\|[^\n]+nested plain text\s+\| Complete\s+\|/,
+    );
+    expect(audit).toContain('24,318 mutants');
+    expect(audit).toContain('zero missed');
     expect(audit).toContain('strict mutation threshold at 100%');
     expect(readme).toContain(
       '[PowerPoint remaining-limit audit](docs/pptx-limit-audit.md)',

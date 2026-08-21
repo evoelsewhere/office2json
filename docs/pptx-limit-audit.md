@@ -22,15 +22,15 @@ documentation all agree.
 
 ## Current native baseline
 
-| Domain       | Source-free creation                                      | Source-preserving edit                                      | Current status        |
-| ------------ | --------------------------------------------------------- | ----------------------------------------------------------- | --------------------- |
-| Text         | Structured bodies, paragraphs, runs, fields, and breaks   | Plain-run replacement and frame transform                   | Complete              |
-| Shapes       | Rect, roundRect, ellipse, fill, line, and transform       | Empty-shape transform                                       | Complete              |
-| Images       | Signature-checked PNG/JPEG media and native `p:pic`       | Picture-frame transform; media bytes remain exact           | Complete              |
-| Tables       | Grid, cells, text, fills, borders, and rectangular merges | Frame/grid transform and single plain cell-run replacement  | Certification pending |
-| Groups       | Recursive native children and explicit child space        | Nested group/descendant transforms and nested plain text    | Certification pending |
-| Charts       | Bar, line, pie, and doughnut with literal ChartML caches  | Chart-frame transform; ChartML remains byte-exact           | Complete              |
-| Preservation | N/A                                                       | No-op byte-exact `R0`; untouched dirty-neighbor parts exact | Complete              |
+| Domain       | Source-free creation                                      | Source-preserving edit                                      | Current status |
+| ------------ | --------------------------------------------------------- | ----------------------------------------------------------- | -------------- |
+| Text         | Structured bodies, paragraphs, runs, fields, and breaks   | Plain-run replacement and frame transform                   | Complete       |
+| Shapes       | Rect, roundRect, ellipse, fill, line, and transform       | Empty-shape transform                                       | Complete       |
+| Images       | Signature-checked PNG/JPEG media and native `p:pic`       | Picture-frame transform; media bytes remain exact           | Complete       |
+| Tables       | Grid, cells, text, fills, borders, and rectangular merges | Frame/grid transform and single plain cell-run replacement  | Complete       |
+| Groups       | Recursive native children and explicit child space        | Nested group/descendant transforms and nested plain text    | Complete       |
+| Charts       | Bar, line, pie, and doughnut with literal ChartML caches  | Chart-frame transform; ChartML remains byte-exact           | Complete       |
+| Preservation | N/A                                                       | No-op byte-exact `R0`; untouched dirty-neighbor parts exact | Complete       |
 
 The table-cell operation reuses the integrity-bound `replace-text` contract.
 Targets use keys such as
@@ -39,6 +39,19 @@ the complete owner path, for example `slide-1-element-2-element-1-run-1`.
 Both operations patch only the owning slide XML and reject fields, breaks,
 multiple source text nodes, stale preconditions, unsafe indexes, extensions,
 and Markup Compatibility branches.
+
+Certification evidence for this capability row:
+
+- [CI run 32450108185](https://github.com/evoelsewhere/oakit/actions/runs/32450108185):
+  29/29 jobs passed across Node 20/22/24, Chromium/Firefox/WebKit, package
+  smoke, and focused mutation modules.
+- [Reliability run 32450510762](https://github.com/evoelsewhere/oakit/actions/runs/32450510762):
+  60/60 jobs passed across fuzzing, corpus, render/memory budgets, full-file,
+  shape, and static-inclusive mutation.
+- The merged mutation artifact covers 108 files and 24,318 mutants: 18,774
+  killed, 5,544 compile errors, and zero missed.
+- The local full gate passed 169 test files / 3,702 tests, three seeded fuzz
+  tests, ESM/CJS/declaration builds, and packed-package smoke.
 
 ## Remaining native feature gaps
 
