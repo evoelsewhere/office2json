@@ -20,6 +20,7 @@ export {
   replacePptxRoundTripText,
   setPptxRoundTripChartTransform,
   setPptxRoundTripGroupTransform,
+  setPptxRoundTripImageCrop,
   setPptxRoundTripImageTransform,
   setPptxRoundTripShapeTransform,
   setPptxRoundTripTableTransform,

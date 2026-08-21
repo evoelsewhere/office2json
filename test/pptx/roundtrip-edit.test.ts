@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { decodeBase64 } from '../../src/common/binary/base64';
 import { createPptx } from '../../src/formats/pptx/creator';
 import {
   applyPptxRoundTripOperationsToPreview,
   normalizePptxRoundTripGroupTransform,
+  normalizePptxRoundTripImageCrop,
   normalizePptxRoundTripTransform,
   replacePptxRoundTripText,
+  setPptxRoundTripImageCrop,
   setPptxRoundTripTextTransform,
   validatePptxRoundTripReplaceTextRequest,
 } from '../../src/formats/pptx/roundtrip/edit';
@@ -127,6 +130,41 @@ function nativeTextOwnersScene(): PptxSceneDocument {
 async function nativeTextOwnersSnapshot() {
   const created = await createPptx(nativeTextOwnersScene());
   return readPptxRoundTrip(created.data);
+}
+
+const IMAGE_BYTES = decodeBase64(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+);
+
+async function imageSnapshot(cropped = false) {
+  const document: PptxSceneDocument = {
+    layouts: [],
+    masters: [],
+    media: [{ data: IMAGE_BYTES, key: 'media', mimeType: 'image/png' }],
+    schemaVersion: 2,
+    size: { height: 540, width: 960 },
+    slides: [
+      {
+        elements: [
+          {
+            authored: {
+              transform: { height: 90, width: 120, x: 20, y: 30 },
+            },
+            ...(cropped
+              ? { crop: { bottom: -20, left: 30, right: 0, top: 10 } }
+              : {}),
+            key: 'image',
+            mediaKey: 'media',
+            resolved: { hidden: false },
+            type: 'image',
+          },
+        ],
+        key: 'slide',
+      },
+    ],
+    themes: [],
+  };
+  return readPptxRoundTrip((await createPptx(document)).data);
 }
 
 describe('PowerPoint round-trip text edit binding', () => {
@@ -473,6 +511,91 @@ describe('PowerPoint round-trip text edit binding', () => {
       x: 1,
       y: 2,
     });
+  });
+
+  it('binds, previews, and removes native image crops', async () => {
+    const crop = { bottom: -20, left: 30, right: 0, top: 10 };
+    const added = await setPptxRoundTripImageCrop(await imageSnapshot(), {
+      targetKey: 'slide-1-element-1',
+      value: crop,
+    });
+    expect(added.operations).toEqual([
+      {
+        expectedCrop: null,
+        id: 'set-image-crop-1',
+        kind: 'set-image-crop',
+        targetKey: 'slide-1-element-1',
+        value: crop,
+      },
+    ]);
+    expect(added.supportProfile.id).toBe('pptx-roundtrip-native-v1');
+    expect(
+      applyPptxRoundTripOperationsToPreview(added).slides[0]?.elements[0],
+    ).toMatchObject({ crop, type: 'image' });
+
+    const removed = await setPptxRoundTripImageCrop(await imageSnapshot(true), {
+      targetKey: 'slide-1-element-1',
+      value: null,
+    });
+    expect(removed.operations).toMatchObject([
+      { expectedCrop: crop, kind: 'set-image-crop', value: null },
+    ]);
+    expect(
+      applyPptxRoundTripOperationsToPreview(removed).slides[0]?.elements[0],
+    ).not.toHaveProperty('crop');
+  });
+
+  it.each([
+    [undefined, 'must be an object or null'],
+    [[], 'must be an object or null'],
+    [{ bottom: 0, left: 0, right: 0 }, 'has an invalid shape'],
+    [
+      { bottom: 0, extra: 0, left: 0, right: 0, top: 0 },
+      'has an invalid shape',
+    ],
+    [
+      { bottom: 0, left: 0.0001, right: 0, top: 0 },
+      'has an invalid percentage',
+    ],
+    [
+      { bottom: 0, left: 100.001, right: 0, top: 0 },
+      'has an invalid percentage',
+    ],
+    [
+      { bottom: 50, left: 0, right: 0, top: 50 },
+      'must leave a positive visible region',
+    ],
+  ])('rejects invalid image crop %j', (value, message) => {
+    expect(() => normalizePptxRoundTripImageCrop(value as never)).toThrow(
+      message,
+    );
+  });
+
+  it('rejects missing, no-op, and duplicate image crop targets', async () => {
+    await expect(
+      setPptxRoundTripImageCrop(await imageSnapshot(), {
+        targetKey: 'missing',
+        value: { bottom: 0, left: 10, right: 0, top: 0 },
+      }),
+    ).rejects.toThrow('PowerPoint image transform target key does not exist');
+    await expect(
+      setPptxRoundTripImageCrop(await imageSnapshot(), {
+        targetKey: 'slide-1-element-1',
+        value: null,
+      }),
+    ).rejects.toThrow(
+      'PowerPoint image crop edit must change the target value',
+    );
+    const first = await setPptxRoundTripImageCrop(await imageSnapshot(), {
+      targetKey: 'slide-1-element-1',
+      value: { bottom: 0, left: 10, right: 0, top: 0 },
+    });
+    await expect(
+      setPptxRoundTripImageCrop(first, {
+        targetKey: 'slide-1-element-1',
+        value: { bottom: 0, left: 20, right: 0, top: 0 },
+      }),
+    ).rejects.toThrow('PowerPoint image crop target is already scheduled');
   });
 
   it.each([null, [], 7])('rejects group transform value %j', (value) => {

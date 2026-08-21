@@ -289,12 +289,169 @@ describe('PowerPoint round-trip snapshot contract validation', () => {
     return value;
   }
 
+  function imageCropSnapshot(): PptxRoundTripSnapshot {
+    const value = snapshot();
+    value.consistency.capabilityProfileVersion = 'pptx-roundtrip-native-v1';
+    value.document.slides = [
+      {
+        elements: [
+          {
+            authored: {},
+            crop: { bottom: -20, left: 30, right: 0, top: 10 },
+            key: 'image-1',
+            resolved: {
+              hidden: false,
+              transform: {
+                flipHorizontal: false,
+                flipVertical: false,
+                height: 40,
+                rotation: 0,
+                width: 160,
+                x: 10,
+                y: 20,
+              },
+            },
+            type: 'image',
+          },
+        ],
+        key: 'slide-1',
+      },
+    ];
+    value.operations = [
+      {
+        expectedCrop: { bottom: -20, left: 30, right: 0, top: 10 },
+        id: 'set-image-crop-1',
+        kind: 'set-image-crop',
+        targetKey: 'image-1',
+        value: { bottom: 5, left: 10, right: 15, top: 20 },
+      },
+    ];
+    value.supportProfile = {
+      effectiveLevel: 'R2',
+      id: 'pptx-roundtrip-native-v1',
+      producerMatrix: [],
+      version: '1',
+    };
+    return value;
+  }
+
   it('accepts a transform edit with an exact preview precondition', () => {
     const value = transformSnapshot();
 
     expect(
       validatePptxRoundTripSnapshot(value, resolvePptxResourceLimits()),
     ).toBe(value);
+  });
+
+  it('accepts image crop replacement, removal, and same-target transform', () => {
+    const replacement = imageCropSnapshot();
+    expect(
+      validatePptxRoundTripSnapshot(replacement, resolvePptxResourceLimits()),
+    ).toBe(replacement);
+
+    const removal = imageCropSnapshot();
+    const removalOperation = removal.operations[0];
+    if (removalOperation?.kind !== 'set-image-crop') {
+      throw new Error('Expected crop operation');
+    }
+    removalOperation.value = null;
+    expect(
+      validatePptxRoundTripSnapshot(removal, resolvePptxResourceLimits()),
+    ).toBe(removal);
+
+    const composed = imageCropSnapshot();
+    composed.operations.push({
+      expectedTransform: {
+        flipHorizontal: false,
+        flipVertical: false,
+        height: 40,
+        rotation: 0,
+        width: 160,
+        x: 10,
+        y: 20,
+      },
+      id: 'set-transform-2',
+      kind: 'set-transform',
+      targetKey: 'image-1',
+      value: {
+        flipHorizontal: true,
+        flipVertical: false,
+        height: 50,
+        rotation: 10,
+        width: 170,
+        x: 30,
+        y: 40,
+      },
+    });
+    expect(
+      validatePptxRoundTripSnapshot(composed, resolvePptxResourceLimits()),
+    ).toBe(composed);
+  });
+
+  it.each([
+    [
+      'missing target',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation !== undefined) operation.targetKey = 'missing';
+      },
+      'PowerPoint round-trip image crop target does not exist',
+    ],
+    [
+      'stale precondition',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.expectedCrop) {
+          operation.expectedCrop.left = 31;
+        }
+      },
+      'PowerPoint round-trip image crop precondition does not match the preview',
+    ],
+    [
+      'no-op',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop') {
+          operation.value = structuredClone(operation.expectedCrop);
+        }
+      },
+      'PowerPoint round-trip image crop must change the value',
+    ],
+    [
+      'missing edge',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.value) {
+          delete unknownRecord(operation.value).top;
+        }
+      },
+      'PowerPoint round-trip operation 1 value is not a valid image crop',
+    ],
+    [
+      'invalid percentage',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.value) {
+          operation.value.left = 100.001;
+        }
+      },
+      'PowerPoint round-trip operation 1 value is not a valid image crop',
+    ],
+    [
+      'collapsed region',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.value) {
+          operation.value.left = 60;
+          operation.value.right = 40;
+        }
+      },
+      'PowerPoint round-trip operation 1 value is not a valid image crop',
+    ],
+  ])('rejects image crop operation with %s', (_name, mutate, message) => {
+    const value = imageCropSnapshot();
+    mutate(value);
+    expectInvalid(value, 'invalid-snapshot', message);
   });
 
   it('reports the exact index of a malformed second operation', () => {

@@ -9,6 +9,7 @@ import type {
   PptxSceneGroupElement,
   PptxSceneGroupTransform,
   PptxSceneElement,
+  PptxSceneImageCrop,
   PptxSceneShapeElement,
   PptxSceneTableElement,
   PptxSceneTextElement,
@@ -22,6 +23,7 @@ import {
 } from './consistency';
 import type {
   PptxRoundTripReplaceTextOperation,
+  PptxRoundTripSetImageCropOperation,
   PptxRoundTripSetTransformOperation,
   PptxRoundTripSnapshot,
 } from './types';
@@ -41,6 +43,11 @@ export interface PptxRoundTripSetTransformRequest {
 export interface PptxRoundTripSetGroupTransformRequest {
   targetKey: string;
   value: PptxSceneGroupTransform;
+}
+
+export interface PptxRoundTripSetImageCropRequest {
+  targetKey: string;
+  value: PptxSceneImageCrop | null;
 }
 
 function scaledTableSizes(
@@ -145,6 +152,28 @@ export function applyPptxRoundTripOperationsToPreview(
         throw new PptxWriteError(
           'verification-failed',
           `PowerPoint transform verification target disappeared: ${operation.targetKey}`,
+        );
+      }
+      continue;
+    }
+    if (operation.kind === 'set-image-crop') {
+      let applied = false;
+      for (const slide of document.slides) {
+        visitTransformElements(slide.elements, (element) => {
+          if (element.type === 'image' && element.key === operation.targetKey) {
+            if (operation.value === null) {
+              delete element.crop;
+            } else {
+              element.crop = structuredClone(operation.value);
+            }
+            applied = true;
+          }
+        });
+      }
+      if (!applied) {
+        throw new PptxWriteError(
+          'verification-failed',
+          `PowerPoint image crop verification target disappeared: ${operation.targetKey}`,
         );
       }
       continue;
@@ -302,6 +331,43 @@ export function normalizePptxRoundTripTransform(
   };
 }
 
+export function normalizePptxRoundTripImageCrop(
+  value: PptxSceneImageCrop | null,
+): PptxSceneImageCrop | null {
+  if (value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    invalidEdit('PowerPoint image crop value must be an object or null');
+  }
+  const keys = ['bottom', 'left', 'right', 'top'] as const;
+  if (
+    Object.keys(value).length !== keys.length ||
+    keys.some((key) => !Object.hasOwn(value, key))
+  ) {
+    invalidEdit('PowerPoint image crop value has an invalid shape');
+  }
+  for (const key of keys) {
+    const percentage = value[key];
+    if (
+      typeof percentage !== 'number' ||
+      !Number.isFinite(percentage) ||
+      percentage < -100 ||
+      percentage > 100 ||
+      !Number.isSafeInteger(percentage * 1_000)
+    ) {
+      invalidEdit('PowerPoint image crop value has an invalid percentage');
+    }
+  }
+  if (value.left + value.right >= 100 || value.top + value.bottom >= 100) {
+    invalidEdit('PowerPoint image crop must leave a positive visible region');
+  }
+  return {
+    bottom: value.bottom,
+    left: value.left,
+    right: value.right,
+    top: value.top,
+  };
+}
+
 function normalizeCoordinateSpace(
   value: PptxSceneGroupTransform['childSpace'],
 ): PptxSceneGroupTransform['childSpace'] {
@@ -427,7 +493,9 @@ export async function replacePptxRoundTripText(
   }
   if (
     snapshot.operations.some(
-      (operation) => operation.targetKey === request.targetKey,
+      (operation) =>
+        operation.kind === 'replace-text' &&
+        operation.targetKey === request.targetKey,
     )
   ) {
     invalidEdit('PowerPoint text edit target is already scheduled');
@@ -486,7 +554,9 @@ async function setPptxRoundTripTransform(
   }
   if (
     snapshot.operations.some(
-      (operation) => operation.targetKey === request.targetKey,
+      (operation) =>
+        operation.kind === 'set-transform' &&
+        operation.targetKey === request.targetKey,
     )
   ) {
     invalidEdit('PowerPoint transform target is already scheduled');
@@ -536,6 +606,53 @@ export function setPptxRoundTripImageTransform(
   request: PptxRoundTripSetTransformRequest,
 ): Promise<PptxRoundTripSnapshot> {
   return setPptxRoundTripTransform(value, request, 'image');
+}
+
+export async function setPptxRoundTripImageCrop(
+  value: PptxRoundTripSnapshot,
+  request: PptxRoundTripSetImageCropRequest,
+): Promise<PptxRoundTripSnapshot> {
+  const limits = resolvePptxResourceLimits();
+  const validated = validatePptxRoundTripSnapshot(value, limits);
+  const snapshot = structuredClone(validated);
+  if (typeof request.targetKey !== 'string' || request.targetKey.length === 0) {
+    invalidEdit('PowerPoint image crop target key must be a non-empty string');
+  }
+  const target = findTransformElement(
+    snapshot,
+    request.targetKey,
+    'image',
+  ) as PptxSceneImageElement;
+  const expectedCrop = target.crop ?? null;
+  const crop = normalizePptxRoundTripImageCrop(request.value);
+  if (canonicalJson(expectedCrop) === canonicalJson(crop)) {
+    invalidEdit('PowerPoint image crop edit must change the target value');
+  }
+  if (
+    snapshot.operations.some(
+      (operation) =>
+        operation.kind === 'set-image-crop' &&
+        operation.targetKey === request.targetKey,
+    )
+  ) {
+    invalidEdit('PowerPoint image crop target is already scheduled');
+  }
+  const operation: PptxRoundTripSetImageCropOperation = {
+    expectedCrop: structuredClone(expectedCrop),
+    id: `set-image-crop-${snapshot.operations.length + 1}`,
+    kind: 'set-image-crop',
+    targetKey: request.targetKey,
+    value: structuredClone(crop),
+  };
+  snapshot.operations.push(operation);
+  snapshot.supportProfile = createPptxRoundTripNativeEditSupportProfile();
+  snapshot.consistency = await createPptxSnapshotConsistency({
+    document: snapshot.document,
+    operations: snapshot.operations,
+    source: snapshot.source,
+    supportProfile: snapshot.supportProfile,
+  });
+  return validatePptxRoundTripSnapshot(snapshot, limits);
 }
 
 export function setPptxRoundTripTableTransform(

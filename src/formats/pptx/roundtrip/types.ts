@@ -1,6 +1,7 @@
 import type {
   PptxSceneDocument,
   PptxSceneGroupTransform,
+  PptxSceneImageCrop,
   PptxSceneTransform,
 } from '../scene-types';
 import type { PptxResourceLimits } from '../types';
@@ -51,8 +52,18 @@ export interface PptxRoundTripSetTransformOperation {
   value: PptxSceneGroupTransform | PptxSceneTransform;
 }
 
+export interface PptxRoundTripSetImageCropOperation {
+  expectedCrop: PptxSceneImageCrop | null;
+  id: string;
+  kind: 'set-image-crop';
+  targetKey: string;
+  value: PptxSceneImageCrop | null;
+}
+
 export type PptxRoundTripOperation =
-  PptxRoundTripReplaceTextOperation | PptxRoundTripSetTransformOperation;
+  | PptxRoundTripReplaceTextOperation
+  | PptxRoundTripSetImageCropOperation
+  | PptxRoundTripSetTransformOperation;
 
 export interface PptxRoundTripSnapshot {
   consistency: PptxSnapshotConsistency;

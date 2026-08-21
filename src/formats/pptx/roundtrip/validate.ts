@@ -3,7 +3,7 @@ import {
   type ResolvedPptxResourceLimits,
 } from '../internal/resource-limits';
 import { isValidXmlText, validatePptxScene } from '../scene-validation';
-import type { PptxSceneElement } from '../scene-types';
+import type { PptxSceneElement, PptxSceneImageCrop } from '../scene-types';
 import { PptxWriteError } from '../write-error';
 import { canonicalJson } from './canonical-json';
 import {
@@ -57,6 +57,13 @@ const REPLACE_TEXT_OPERATION_KEYS = [
 ] as const;
 const SET_TRANSFORM_OPERATION_KEYS = [
   'expectedTransform',
+  'id',
+  'kind',
+  'targetKey',
+  'value',
+] as const;
+const SET_IMAGE_CROP_OPERATION_KEYS = [
+  'expectedCrop',
   'id',
   'kind',
   'targetKey',
@@ -276,6 +283,49 @@ function editableTransforms(
   return transforms;
 }
 
+function editableImageCrops(
+  value: PptxRoundTripSnapshot['document'],
+): Map<string, PptxSceneImageCrop | null> {
+  const crops = new Map<string, PptxSceneImageCrop | null>();
+  const collect = (elements: readonly PptxSceneElement[]): void => {
+    for (const element of elements) {
+      if (element.type === 'image')
+        crops.set(element.key, element.crop ?? null);
+      if (element.type === 'group') collect(element.elements);
+    }
+  };
+  for (const slide of value.slides) collect(slide.elements);
+  return crops;
+}
+
+function validateImageCrop(
+  value: unknown,
+  message: string,
+): PptxSceneImageCrop | null {
+  if (value === null) return null;
+  const keys = ['bottom', 'left', 'right', 'top'] as const;
+  const crop = exactRecord(value, keys, message);
+  for (const key of keys) {
+    const percentage = crop[key];
+    if (
+      typeof percentage !== 'number' ||
+      !Number.isFinite(percentage) ||
+      percentage < -100 ||
+      percentage > 100 ||
+      !Number.isSafeInteger(percentage * 1_000)
+    ) {
+      invalidSnapshot(message);
+    }
+  }
+  if (
+    Number(crop.left) + Number(crop.right) >= 100 ||
+    Number(crop.top) + Number(crop.bottom) >= 100
+  ) {
+    invalidSnapshot(message);
+  }
+  return crop as unknown as PptxSceneImageCrop;
+}
+
 function validateTransform(
   value: unknown,
   message: string,
@@ -320,6 +370,7 @@ function validateOperations(
 ): void {
   const runs = editableRuns(document);
   const transforms = editableTransforms(document);
+  const imageCrops = editableImageCrops(document);
   const ids = new Set<string>();
   const targets = new Set<string>();
   for (const [index, value] of values.entries()) {
@@ -329,7 +380,11 @@ function validateOperations(
       );
     }
     const kind = (value as Record<string, unknown>).kind;
-    if (kind !== 'replace-text' && kind !== 'set-transform') {
+    if (
+      kind !== 'replace-text' &&
+      kind !== 'set-image-crop' &&
+      kind !== 'set-transform'
+    ) {
       invalidSnapshot(
         `PowerPoint round-trip operation ${index + 1} kind is unsupported`,
       );
@@ -338,7 +393,9 @@ function validateOperations(
       value,
       kind === 'replace-text'
         ? REPLACE_TEXT_OPERATION_KEYS
-        : SET_TRANSFORM_OPERATION_KEYS,
+        : kind === 'set-image-crop'
+          ? SET_IMAGE_CROP_OPERATION_KEYS
+          : SET_TRANSFORM_OPERATION_KEYS,
       `PowerPoint round-trip operation ${index + 1} has an invalid shape`,
     );
     for (const key of ['id', 'targetKey'] as const) {
@@ -350,16 +407,44 @@ function validateOperations(
     }
     const id = operation.id as string;
     const targetKey = operation.targetKey as string;
+    const targetIdentity = `${kind}\u0000${targetKey}`;
     if (id.length === 0 || ids.has(id)) {
       invalidSnapshot('PowerPoint round-trip operation ids must be unique');
     }
-    if (targetKey.length === 0 || targets.has(targetKey)) {
+    if (targetKey.length === 0 || targets.has(targetIdentity)) {
       invalidSnapshot(
         'PowerPoint round-trip text edit targets must be non-empty and unique',
       );
     }
     ids.add(id);
-    targets.add(targetKey);
+    targets.add(targetIdentity);
+    if (kind === 'set-image-crop') {
+      if (!imageCrops.has(targetKey)) {
+        invalidSnapshot(
+          'PowerPoint round-trip image crop target does not exist',
+        );
+      }
+      const sourceCrop = imageCrops.get(targetKey) as PptxSceneImageCrop | null;
+      const expectedCrop = validateImageCrop(
+        operation.expectedCrop,
+        `PowerPoint round-trip operation ${index + 1} expectedCrop is invalid`,
+      );
+      const replacement = validateImageCrop(
+        operation.value,
+        `PowerPoint round-trip operation ${index + 1} value is not a valid image crop`,
+      );
+      if (canonicalJson(sourceCrop) !== canonicalJson(expectedCrop)) {
+        invalidSnapshot(
+          'PowerPoint round-trip image crop precondition does not match the preview',
+        );
+      }
+      if (canonicalJson(replacement) === canonicalJson(expectedCrop)) {
+        invalidSnapshot(
+          'PowerPoint round-trip image crop must change the value',
+        );
+      }
+      continue;
+    }
     if (kind === 'set-transform') {
       const sourceTransform = transforms.get(targetKey);
       if (sourceTransform === undefined) {

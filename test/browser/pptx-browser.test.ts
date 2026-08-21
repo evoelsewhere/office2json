@@ -9,6 +9,7 @@ import {
   renderPptxToSvg,
   replacePptxRoundTripText,
   serializePptxRoundTripJson,
+  setPptxRoundTripImageCrop,
   setPptxRoundTripImageTransform,
   setPptxRoundTripChartTransform,
   setPptxRoundTripShapeTransform,
@@ -404,7 +405,11 @@ describe('PPTX public API in browsers', () => {
       x: 450,
       y: 260,
     };
-    const edited = await setPptxRoundTripImageTransform(snapshot, {
+    const cropped = await setPptxRoundTripImageCrop(snapshot, {
+      targetKey: 'slide-1-element-1',
+      value: { bottom: -20, left: 30, right: 0, top: 10 },
+    });
+    const edited = await setPptxRoundTripImageTransform(cropped, {
       targetKey: 'slide-1-element-1',
       value: changed,
     });
@@ -421,6 +426,7 @@ describe('PPTX public API in browsers', () => {
       height: changed.height,
       isFlipH: true,
       left: changed.x,
+      rect: { b: -20, l: 30, r: 0, t: 10 },
       rotate: changed.rotation,
       top: changed.y,
       type: 'image',
@@ -428,9 +434,9 @@ describe('PPTX public API in browsers', () => {
     });
     if (parsedImage?.type !== 'image') throw new Error('Expected image');
     expect(parsedImage.base64).toMatch(/^data:image\/png;base64,/);
-    expect(new TextDecoder().decode(rendered.slides[0]?.data)).toContain(
-      'data:image/png;base64,',
-    );
+    const svg = new TextDecoder().decode(rendered.slides[0]?.data);
+    expect(svg).toContain('overflow="hidden"><image x="-');
+    expect(svg).toContain('data:image/png;base64,');
   });
 
   it('creates and edits a native table without an Office runtime', async () => {

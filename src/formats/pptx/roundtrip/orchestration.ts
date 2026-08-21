@@ -15,6 +15,7 @@ import {
   readPptxPartPayloads,
   verifyPptxPatchedPayloads,
 } from './package-preservation';
+import { patchPptxImageCropXml } from './image-crop-xml';
 import { unsupportedPptxEdit } from './patch-error';
 import { resolvePptxSlideParts } from './relationships';
 import { patchPptxShapeTextXml, patchPptxTableCellTextXml } from './text-xml';
@@ -28,6 +29,7 @@ import {
 import type {
   PptxRoundTripOperation,
   PptxRoundTripReplaceTextOperation,
+  PptxRoundTripSetImageCropOperation,
   PptxRoundTripSetTransformOperation,
 } from './types';
 import JSZip from 'jszip';
@@ -180,7 +182,8 @@ function textTarget(
 }
 
 function transformTarget(
-  operation: PptxRoundTripSetTransformOperation,
+  operation:
+    PptxRoundTripSetImageCropOperation | PptxRoundTripSetTransformOperation,
   document: PptxDocument,
 ): TextTarget {
   const match = TRANSFORM_TARGET_KEY_PATTERN.exec(operation.targetKey);
@@ -234,7 +237,9 @@ function transformTarget(
     elementType: element.type,
     shapeId: element.id,
     slideIndex,
-    transformOperation: localizedOperation(operation, ancestors),
+    ...(operation.kind === 'set-transform'
+      ? { transformOperation: localizedOperation(operation, ancestors) }
+      : {}),
   };
 }
 
@@ -264,50 +269,57 @@ export async function patchPptxOperations(
       operation.kind === 'replace-text'
         ? textTarget(operation, document)
         : transformTarget(operation, document);
+    if (operation.kind === 'set-image-crop' && target.elementType !== 'image') {
+      unsupportedPptxEdit(
+        'PowerPoint image crop target is not a native image element',
+      );
+    }
     const slidePart = slides[target.slideIndex] as string;
     const sourceBytes = sourcePayloads.get(slidePart) as Uint8Array;
     const current =
       editedXml.get(slidePart) ?? decodeEditablePptxXml(sourceBytes, limits);
     const patched =
-      operation.kind === 'replace-text'
-        ? target.elementType === 'table'
-          ? patchPptxTableCellTextXml(
-              current,
-              target.shapeId,
-              target.rowIndex as number,
-              target.columnIndex as number,
-              operation,
-            )
-          : patchPptxShapeTextXml(current, target.shapeId, operation)
-        : target.elementType === 'chart'
-          ? patchPptxChartFrameTransformXml(
-              current,
-              target.shapeId,
-              target.transformOperation as PptxRoundTripSetTransformOperation,
-            )
-          : target.elementType === 'image'
-            ? patchPptxPictureTransformXml(
+      operation.kind === 'set-image-crop'
+        ? patchPptxImageCropXml(current, target.shapeId, operation)
+        : operation.kind === 'replace-text'
+          ? target.elementType === 'table'
+            ? patchPptxTableCellTextXml(
+                current,
+                target.shapeId,
+                target.rowIndex as number,
+                target.columnIndex as number,
+                operation,
+              )
+            : patchPptxShapeTextXml(current, target.shapeId, operation)
+          : target.elementType === 'chart'
+            ? patchPptxChartFrameTransformXml(
                 current,
                 target.shapeId,
                 target.transformOperation as PptxRoundTripSetTransformOperation,
               )
-            : target.elementType === 'group'
-              ? patchPptxGroupTransformXml(
+            : target.elementType === 'image'
+              ? patchPptxPictureTransformXml(
                   current,
                   target.shapeId,
                   target.transformOperation as PptxRoundTripSetTransformOperation,
                 )
-              : target.elementType === 'table'
-                ? patchPptxGraphicFrameTransformXml(
+              : target.elementType === 'group'
+                ? patchPptxGroupTransformXml(
                     current,
                     target.shapeId,
                     target.transformOperation as PptxRoundTripSetTransformOperation,
                   )
-                : patchPptxShapeTransformXml(
-                    current,
-                    target.shapeId,
-                    target.transformOperation as PptxRoundTripSetTransformOperation,
-                  );
+                : target.elementType === 'table'
+                  ? patchPptxGraphicFrameTransformXml(
+                      current,
+                      target.shapeId,
+                      target.transformOperation as PptxRoundTripSetTransformOperation,
+                    )
+                  : patchPptxShapeTransformXml(
+                      current,
+                      target.shapeId,
+                      target.transformOperation as PptxRoundTripSetTransformOperation,
+                    );
     editedXml.set(slidePart, patched);
     patchedParts.add(slidePart);
   }
