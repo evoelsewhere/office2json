@@ -22,15 +22,15 @@ documentation all agree.
 
 ## Current native baseline
 
-| Domain       | Source-free creation                                      | Source-preserving edit                                      | Current status |
-| ------------ | --------------------------------------------------------- | ----------------------------------------------------------- | -------------- |
-| Text         | Structured bodies, paragraphs, runs, fields, and breaks   | Plain-run replacement and frame transform                   | Complete       |
-| Shapes       | Rect, roundRect, ellipse, fill, line, and transform       | Empty-shape transform                                       | Complete       |
-| Images       | Signature-checked PNG/JPEG media and native `p:pic`       | Picture-frame transform; media bytes remain exact           | Complete       |
-| Tables       | Grid, cells, text, fills, borders, and rectangular merges | Frame/grid transform and single plain cell-run replacement  | Complete       |
-| Groups       | Recursive native children and explicit child space        | Nested group/descendant transforms and nested plain text    | Complete       |
-| Charts       | Bar, line, pie, and doughnut with literal ChartML caches  | Chart-frame transform; ChartML remains byte-exact           | Complete       |
-| Preservation | N/A                                                       | No-op byte-exact `R0`; untouched dirty-neighbor parts exact | Complete       |
+| Domain       | Source-free creation                                       | Source-preserving edit                                           | Current status        |
+| ------------ | ---------------------------------------------------------- | ---------------------------------------------------------------- | --------------------- |
+| Text         | Structured bodies, paragraphs, runs, fields, and breaks    | Plain-run replacement and frame transform                        | Complete              |
+| Shapes       | Rect, roundRect, ellipse, fill, line, and transform        | Empty-shape transform                                            | Complete              |
+| Images       | Signature-checked PNG/JPEG media, crop, and native `p:pic` | Picture transform and crop add/replace/remove; media bytes exact | Certification pending |
+| Tables       | Grid, cells, text, fills, borders, and rectangular merges  | Frame/grid transform and single plain cell-run replacement       | Complete              |
+| Groups       | Recursive native children and explicit child space         | Nested group/descendant transforms and nested plain text         | Complete              |
+| Charts       | Bar, line, pie, and doughnut with literal ChartML caches   | Chart-frame transform; ChartML remains byte-exact                | Complete              |
+| Preservation | N/A                                                        | No-op byte-exact `R0`; untouched dirty-neighbor parts exact      | Complete              |
 
 The table-cell operation reuses the integrity-bound `replace-text` contract.
 Targets use keys such as
@@ -60,7 +60,6 @@ Certification evidence for this capability row:
 | Gap                   | Current evidence                                                                            | Required native result                                                                                                      | Completion evidence                                                                                                    |
 | --------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Shape-owned rich text | A shape with non-empty content becomes preservation-only in the round-trip preview          | Represent shape geometry and structured text together; replace bounded text without losing shape semantics                  | Independent shape-with-text fixture, style/geometry preservation, nested-group case, browser test, mutation audit      |
-| Image crop            | Crop is parsed for rendering but is not part of the editable scene contract                 | Add normalized crop metadata and `setPptxRoundTripImageCrop`; patch only `a:srcRect` in the owning `p:pic`                  | Percent boundary tests, absent-vs-zero semantics, media byte equality, SVG crop verification                           |
 | Image replacement     | Existing image media is copied and frame transforms are editable                            | Replace one supported PNG/JPEG relationship target with bounded bytes while preserving or explicitly allocating media parts | Signature/hash tests, relationship/content-type graph, shared-media policy, orphan prevention                          |
 | Table structure       | Cell plain text and frame/grid sizing are editable; merges are creation-only                | Edit cell body/properties and merge/unmerge a rectangular region                                                            | Literal table XML assertions, continuation-cell validation, exact row/column invariants, producer reopen               |
 | Chart data            | Native ChartML caches are created but preserved during edits                                | Replace bounded categories/values for literal-cache charts without formulas or external data                                | Cache cardinality/format assertions, chart-part-only dirty closure, visual verification, unsupported-formula rejection |
@@ -146,9 +145,9 @@ The following are not defects to “work around”:
 
 The remaining native work should proceed in this order:
 
-1. Certify table-cell and nested-group text editing on all gates.
-2. Add image crop editing because it has one owner part, no media-byte change,
-   and a narrow semantic surface.
+1. Keep table-cell and nested-group text editing in the full regression gates.
+2. Certify native image crop editing across CI, Reliability, and producer
+   evidence because the runtime operation is implemented.
 3. Add literal-cache chart data editing with strict formula/external-data
    rejection.
 4. Add bounded table structure/style operations.

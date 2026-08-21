@@ -29,6 +29,7 @@ describe('PowerPoint usage guide', () => {
       'setPptxRoundTripTextTransform',
       'setPptxRoundTripShapeTransform',
       'setPptxRoundTripImageTransform',
+      'setPptxRoundTripImageCrop',
       'setPptxRoundTripTableTransform',
       'setPptxRoundTripGroupTransform',
       'setPptxRoundTripChartTransform',

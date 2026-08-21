@@ -41,6 +41,7 @@ service are not runtime dependencies.
 | Move, resize, rotate, or flip supported text | `setPptxRoundTripTextTransform`            | Scheduled, verified transform operation         |
 | Move, resize, rotate, or flip a native shape | `setPptxRoundTripShapeTransform`           | Native shape transform with part preservation   |
 | Move, resize, rotate, or flip a native image | `setPptxRoundTripImageTransform`           | Native picture transform; media bytes preserved |
+| Add, replace, or remove an image crop        | `setPptxRoundTripImageCrop`                | Native `a:srcRect`; media bytes preserved       |
 | Move, resize, rotate, or flip a native table | `setPptxRoundTripTableTransform`           | Native table frame and proportional grid patch  |
 | Transform a native nested group              | `setPptxRoundTripGroupTransform`           | Outer/child spaces and descendants verified     |
 | Move or resize a native chart                | `setPptxRoundTripChartTransform`           | Chart frame patched; ChartML bytes preserved    |
@@ -715,6 +716,7 @@ after the API call cannot alter the package being built.
 import {
   createPptx,
   readPptxRoundTrip,
+  setPptxRoundTripImageCrop,
   setPptxRoundTripImageTransform,
   writePptxRoundTrip,
   type PptxSceneDocument,
@@ -755,7 +757,11 @@ const image = imageSnapshot.document.slides[0]?.elements.find(
 );
 if (!image?.resolved.transform) throw new Error('No editable image');
 
-const editedImage = await setPptxRoundTripImageTransform(imageSnapshot, {
+const croppedImage = await setPptxRoundTripImageCrop(imageSnapshot, {
+  targetKey: image.key,
+  value: { bottom: -20, left: 30, right: 0, top: 10.125 },
+});
+const editedImage = await setPptxRoundTripImageTransform(croppedImage, {
   targetKey: image.key,
   value: {
     ...image.resolved.transform,
@@ -769,8 +775,13 @@ const imageOutput = await writePptxRoundTrip(editedImage);
 
 Image transform editing changes only the owning slide XML. The original media
 part and every other untouched package payload remain byte-exact. Crop editing
-is a separate future operation; direct mutation of preview crop fields is not
-accepted.
+uses signed percentages from -100 through 100 with at most three decimal
+places. The horizontal and vertical edge sums must each leave a positive
+visible region. Pass `null` to remove an existing crop. The operation patches
+only `a:srcRect`; image bytes, relationships, and unrelated parts remain exact.
+Stale crop preconditions, duplicate rectangles, malformed percentages,
+ambiguous picture ownership, compatibility markup, and unsafe extensions fail
+closed.
 
 ## Create and edit a native table
 
@@ -1471,7 +1482,7 @@ safe value.
 | ------------------------------- | --------------------------------------------------------------------------------- |
 | Read PPTX                       | Bounded structured parsing with strict/tolerant diagnostics                       |
 | Create PPTX                     | Text C3 producer profile; native shape/image/table/group/chart C2 runtime profile |
-| Edit PPTX                       | Text R3; native transforms plus table/nested-group plain text R2                  |
+| Edit PPTX                       | Text R3; native transforms, crop, table/nested-group plain text R2                |
 | Preserve unchanged PPTX         | Byte-exact R0                                                                     |
 | Render SVG                      | Node.js and browser, no Office runtime                                            |
 | Render PNG                      | Node.js, no Office runtime                                                        |

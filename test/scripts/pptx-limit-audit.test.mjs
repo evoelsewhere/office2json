@@ -13,7 +13,6 @@ describe('PowerPoint remaining-limit audit', () => {
 
     for (const capability of [
       'Shape-owned rich text',
-      'Image crop',
       'Image replacement',
       'Table structure',
       'Chart data',
@@ -43,6 +42,9 @@ describe('PowerPoint remaining-limit audit', () => {
     );
     expect(audit).toMatch(
       /\| Groups\s+\|[^\n]+nested plain text\s+\| Complete\s+\|/,
+    );
+    expect(audit).toMatch(
+      /\| Images\s+\|[^\n]+crop add\/replace\/remove[^\n]+Certification pending\s+\|/,
     );
     expect(audit).toContain('24,318 mutants');
     expect(audit).toContain('zero missed');
