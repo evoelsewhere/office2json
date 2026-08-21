@@ -48,6 +48,7 @@ export const mutatedFiles = [
   'src/formats/pptx/roundtrip/digest.ts',
   'src/formats/pptx/roundtrip/edit.ts',
   'src/formats/pptx/roundtrip/group-preview.ts',
+  'src/formats/pptx/roundtrip/image-crop-xml.ts',
   'src/formats/pptx/roundtrip/orchestration.ts',
   'src/formats/pptx/roundtrip/package-preservation.ts',
   'src/formats/pptx/roundtrip/patch-error.ts',

@@ -9,6 +9,7 @@ export const mutationModules = [
       'test/pptx/roundtrip-transform.test.ts',
       'test/black-box/roundtrip-shape-transform.test.ts',
       'test/black-box/roundtrip-image-transform.test.ts',
+      'test/black-box/roundtrip-image-crop.test.ts',
       'test/black-box/roundtrip-table-transform.test.ts',
       'test/black-box/roundtrip-table-text.test.ts',
       'test/black-box/roundtrip-group-transform.test.ts',
@@ -74,6 +75,7 @@ export const mutationModules = [
       'test/pptx/roundtrip-transform.test.ts',
       'test/black-box/roundtrip-shape-transform.test.ts',
       'test/black-box/roundtrip-image-transform.test.ts',
+      'test/black-box/roundtrip-image-crop.test.ts',
       'test/black-box/roundtrip-table-transform.test.ts',
       'test/black-box/roundtrip-table-text.test.ts',
       'test/black-box/roundtrip-group-transform.test.ts',
@@ -86,6 +88,8 @@ export const mutationModules = [
     source: 'src/formats/pptx/roundtrip/preview.ts',
     tests: [
       'test/pptx/roundtrip-preview.test.ts',
+      'test/black-box/picture-crop.test.ts',
+      'test/black-box/roundtrip-image-crop.test.ts',
       'test/black-box/roundtrip-shape-transform.test.ts',
       'test/black-box/roundtrip-chart-transform.test.ts',
     ],
@@ -95,6 +99,15 @@ export const mutationModules = [
     name: 'group-preview',
     source: 'src/formats/pptx/roundtrip/group-preview.ts',
     tests: ['test/pptx/roundtrip-group-preview.test.ts'],
+  },
+  {
+    estimatedSeconds: 180,
+    name: 'image-crop-xml',
+    source: 'src/formats/pptx/roundtrip/image-crop-xml.ts',
+    tests: [
+      'test/pptx/roundtrip-image-crop-xml.test.ts',
+      'test/black-box/roundtrip-image-crop.test.ts',
+    ],
   },
   {
     estimatedSeconds: 420,
@@ -134,6 +147,7 @@ export const mutationModules = [
       'test/pptx/roundtrip-validation.test.ts',
       'test/black-box/roundtrip-shape-transform.test.ts',
       'test/black-box/roundtrip-image-transform.test.ts',
+      'test/black-box/roundtrip-image-crop.test.ts',
       'test/black-box/roundtrip-table-transform.test.ts',
       'test/black-box/roundtrip-table-text.test.ts',
       'test/black-box/roundtrip-group-transform.test.ts',

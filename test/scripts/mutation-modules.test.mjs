@@ -52,6 +52,7 @@ describe('focused mutation modules', () => {
       'roundtrip-edit',
       'roundtrip-preview',
       'group-preview',
+      'image-crop-xml',
       'table-preview',
       'table-preview-cell',
       'scene-table-validation',
