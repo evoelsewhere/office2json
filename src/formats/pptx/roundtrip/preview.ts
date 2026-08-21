@@ -144,6 +144,16 @@ function sceneImageElement(
   const transform = resolvedTransform(element);
   return {
     authored: {},
+    ...(element.rect === undefined
+      ? {}
+      : {
+          crop: {
+            bottom: element.rect.b ?? 0,
+            left: element.rect.l ?? 0,
+            right: element.rect.r ?? 0,
+            top: element.rect.t ?? 0,
+          },
+        }),
     key: keyOverride ?? `slide-${slideIndex + 1}-element-${elementIndex + 1}`,
     resolved: {
       hidden: false,

@@ -6,6 +6,12 @@ function booleanAttribute(value: boolean): string {
   return value ? '1' : '0';
 }
 
+function serializePictureCrop(element: PptxSceneImageElement): string {
+  const crop = element.crop;
+  if (crop === undefined) return '';
+  return `<a:srcRect l="${Math.round(crop.left * 1_000)}" t="${Math.round(crop.top * 1_000)}" r="${Math.round(crop.right * 1_000)}" b="${Math.round(crop.bottom * 1_000)}"/>`;
+}
+
 function serializePictureNonVisualProperties(
   element: PptxSceneImageElement,
   shapeId: number,
@@ -33,7 +39,7 @@ export function serializePicture(
   relationshipId: string,
 ): string {
   const nonVisual = serializePictureNonVisualProperties(element, shapeId);
-  const blipFill = `<p:blipFill><a:blip r:embed="${escapeXmlAttribute(relationshipId)}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>`;
+  const blipFill = `<p:blipFill><a:blip r:embed="${escapeXmlAttribute(relationshipId)}"/>${serializePictureCrop(element)}<a:stretch><a:fillRect/></a:stretch></p:blipFill>`;
   const shapeProperties = `<p:spPr>${serializeShapeTransform(transform)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>`;
   return `<p:pic>${nonVisual}${blipFill}${shapeProperties}</p:pic>`;
 }

@@ -60,6 +60,15 @@ describe('native PowerPoint image serialization', () => {
     expect(xml).toContain('rot="-1800000" flipH="0" flipV="1"');
   });
 
+  it('serializes exact signed crop percentages before image stretching', () => {
+    const element = imageElement();
+    element.crop = { bottom: -20, left: 30, right: 0, top: 10.125 };
+
+    expect(serializePicture(element, TRANSFORM, 2, 'rId2')).toContain(
+      '<a:blip r:embed="rId2"/><a:srcRect l="30000" t="10125" r="0" b="-20000"/><a:stretch>',
+    );
+  });
+
   it('distinguishes explicit visible state from authored absence', () => {
     const visible = imageElement();
     visible.authored.hidden = false;

@@ -452,6 +452,65 @@ describe('PowerPoint creation scene validation', () => {
     );
   });
 
+  it('accepts bounded native image crop percentages', () => {
+    const scene = creationScene();
+    const image = addNativeImage(scene);
+    image.crop = { bottom: -20, left: 30, right: 0, top: 10.125 };
+
+    expect(validateNativeCreation(scene)).toEqual({ issues: [], valid: true });
+  });
+
+  it.each([
+    ['missing edge', { bottom: 0, left: 0, right: 0 }, 'top'],
+    [
+      'unknown edge',
+      { bottom: 0, diagonal: 1, left: 0, right: 0, top: 0 },
+      'diagonal',
+    ],
+    ['string edge', { bottom: 0, left: '1', right: 0, top: 0 }, 'left'],
+    [
+      'non-finite edge',
+      { bottom: 0, left: 0, right: Infinity, top: 0 },
+      'right',
+    ],
+    ['low edge', { bottom: -100.001, left: 0, right: 0, top: 0 }, 'bottom'],
+    ['high edge', { bottom: 0, left: 0, right: 0, top: 100.001 }, 'top'],
+    ['precision', { bottom: 0, left: 0.0001, right: 0, top: 0 }, 'left'],
+  ])('rejects image crop %s', (_name, crop, field) => {
+    const scene = creationScene();
+    const image = addNativeImage(scene);
+    image.crop = crop;
+
+    expect(validateNativeCreation(scene).issues).toContainEqual(
+      expect.objectContaining({
+        path: `$.slides[0].elements[0].crop.${field}`,
+      }),
+    );
+  });
+
+  it.each([
+    [
+      'horizontal',
+      { bottom: 0, left: 60, right: 40, top: 0 },
+      'Horizontal image crop must leave a positive visible region',
+    ],
+    [
+      'vertical',
+      { bottom: 50, left: 0, right: 0, top: 50 },
+      'Vertical image crop must leave a positive visible region',
+    ],
+  ])('rejects a collapsed %s image crop', (_name, crop, message) => {
+    const scene = creationScene();
+    const image = addNativeImage(scene);
+    image.crop = crop;
+
+    expect(validateNativeCreation(scene).issues).toContainEqual({
+      code: 'invalid-numeric-value',
+      message,
+      path: '$.slides[0].elements[0].crop',
+    });
+  });
+
   it.each(['fillColor', 'geometry', 'lineColor', 'lineWidth'])(
     'rejects authored image shape styling property %s',
     (property) => {

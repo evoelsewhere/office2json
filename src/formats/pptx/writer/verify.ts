@@ -271,6 +271,18 @@ function verifyImageElement(
       `Generated PowerPoint image geometry mismatch at ${location}`,
     );
   }
+  const crop = expected.crop;
+  if (
+    (crop === undefined && generated.rect !== undefined) ||
+    (crop !== undefined &&
+      (generated.rect === undefined ||
+        generated.rect.b !== crop.bottom ||
+        generated.rect.l !== crop.left ||
+        generated.rect.r !== crop.right ||
+        generated.rect.t !== crop.top))
+  ) {
+    throw new Error(`Generated PowerPoint image crop mismatch at ${location}`);
+  }
 }
 
 function verifyShapeElement(

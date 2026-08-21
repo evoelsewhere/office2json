@@ -254,6 +254,7 @@ describe('PowerPoint creation through the public API', () => {
           y: 300,
         },
       },
+      crop: { bottom: -20, left: 30, right: 0, top: 10.125 },
       description: 'Native image',
       key: 'logo-picture',
       mediaKey: 'logo-media',
@@ -281,11 +282,15 @@ describe('PowerPoint creation through the public API', () => {
     ).resolves.toContain(
       'Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"',
     );
+    await expect(
+      archive.file('ppt/slides/slide1.xml')?.async('string'),
+    ).resolves.toContain('<a:srcRect l="30000" t="10125" r="0" b="-20000"/>');
     const parsedImage = parsed.slides[0]?.elements[1];
     expect(parsedImage).toMatchObject({
       height: 90,
       isFlipV: true,
       left: 500,
+      rect: { b: -20, l: 30, r: 0, t: 10.125 },
       rotate: 5,
       top: 300,
       type: 'image',

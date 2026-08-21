@@ -59,6 +59,7 @@ export type {
   PptxSceneElementBase,
   PptxSceneGroupTransform,
   PptxSceneGroupElement,
+  PptxSceneImageCrop,
   PptxSceneLayout,
   PptxSceneMaster,
   PptxSceneParagraph,

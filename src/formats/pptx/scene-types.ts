@@ -122,7 +122,15 @@ export interface PptxSceneShapeElement extends PptxSceneElementBase {
   type: 'shape';
 }
 
+export interface PptxSceneImageCrop {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+}
+
 export interface PptxSceneImageElement extends PptxSceneElementBase {
+  crop?: PptxSceneImageCrop;
   mediaKey?: string;
   type: 'image';
 }

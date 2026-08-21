@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parsePptx } from '../../src';
+import { parsePptx, readPptxRoundTrip } from '../../src';
 import {
   createIndependentPptx,
   DRAWING_NS,
@@ -67,5 +67,15 @@ describe('PowerPoint picture crops through the public API', () => {
     expect(byId['701']).toMatchObject({ type: 'image' });
     expect(byId['701']).not.toHaveProperty('rect');
     expect(result).not.toHaveProperty('diagnostics');
+
+    const snapshot = await readPptxRoundTrip(input);
+    expect(snapshot.document.slides[0]?.elements).toMatchObject([
+      {
+        crop: { bottom: -20, left: 30, right: 0, top: 10 },
+        type: 'image',
+      },
+      { type: 'image' },
+    ]);
+    expect(snapshot.document.slides[0]?.elements[1]).not.toHaveProperty('crop');
   });
 });

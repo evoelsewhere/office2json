@@ -842,6 +842,53 @@ function validateChartElement(
   }
 }
 
+function validateImageCrop(
+  value: unknown,
+  path: string,
+  issues: PptxSceneValidationIssue[],
+): void {
+  const crop = requireObject(value, path, issues);
+  if (!crop) return;
+  const keys = ['bottom', 'left', 'right', 'top'] as const;
+  rejectUnknownKeys(crop, keys, path, issues);
+  let valid = true;
+  for (const key of keys) {
+    const percentage = crop[key];
+    if (
+      typeof percentage !== 'number' ||
+      !Number.isFinite(percentage) ||
+      percentage < -100 ||
+      percentage > 100 ||
+      !Number.isSafeInteger(percentage * 1_000)
+    ) {
+      valid = false;
+      addIssue(
+        issues,
+        'invalid-numeric-value',
+        `${path}.${key}`,
+        'Image crop must be a finite percentage from -100 through 100 with at most three decimal places',
+      );
+    }
+  }
+  if (!valid) return;
+  if (Number(crop.left) + Number(crop.right) >= 100) {
+    addIssue(
+      issues,
+      'invalid-numeric-value',
+      path,
+      'Horizontal image crop must leave a positive visible region',
+    );
+  }
+  if (Number(crop.top) + Number(crop.bottom) >= 100) {
+    addIssue(
+      issues,
+      'invalid-numeric-value',
+      path,
+      'Vertical image crop must leave a positive visible region',
+    );
+  }
+}
+
 function validatePlaceholder(
   value: unknown,
   path: string,
@@ -978,7 +1025,10 @@ function validateElement(
       );
     }
   } else if (element.type === 'image') {
-    rejectUnknownKeys(element, [...baseKeys, 'mediaKey'], path, issues);
+    rejectUnknownKeys(element, [...baseKeys, 'crop', 'mediaKey'], path, issues);
+    if (element.crop !== undefined) {
+      validateImageCrop(element.crop, `${path}.crop`, issues);
+    }
     if (typeof element.mediaKey === 'string') {
       referenceKeys.push({
         path: `${path}.mediaKey`,
