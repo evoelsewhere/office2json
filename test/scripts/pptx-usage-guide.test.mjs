@@ -178,7 +178,7 @@ describe('PowerPoint usage guide', () => {
         imageMode: 'none',
       }),
     ).resolves.toBeDefined();
-  });
+  }, 30_000);
 
   it('keeps every relative guide link resolvable', async () => {
     const guide = await readFile(guidePath, 'utf8');

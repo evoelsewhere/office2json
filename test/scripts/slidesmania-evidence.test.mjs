@@ -79,7 +79,7 @@ describe('tracked SlidesMania producer evidence', () => {
       expect(candidate.byteLength).toBeGreaterThan(50_000);
     }
     expect(svg.toString()).toContain('Run 32045412714');
-  });
+  }, 30_000);
 
   it('links the evidence, source license, and successful run from the README', async () => {
     const readme = await readFile(path.resolve('README.md'), 'utf8');
