@@ -455,9 +455,33 @@ describe('PowerPoint creation scene validation', () => {
   it('accepts bounded native image crop percentages', () => {
     const scene = creationScene();
     const image = addNativeImage(scene);
-    image.crop = { bottom: -20, left: 30, right: 0, top: 10.125 };
+    image.crop = { bottom: 1.015, left: 30, right: 0, top: 10.125 };
 
     expect(validateNativeCreation(scene)).toEqual({ issues: [], valid: true });
+  });
+
+  it('preserves finite source crops outside the native write profile', () => {
+    const scene = creationScene();
+    const image = addNativeImage(scene);
+    image.crop = { bottom: 140, left: 120, right: 0, top: 110 };
+
+    expect(validatePptxScene(scene)).toEqual({ issues: [], valid: true });
+    expect(validateNativeCreation(scene).issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'invalid-numeric-value',
+          path: '$.slides[0].elements[0].crop.bottom',
+        }),
+        expect.objectContaining({
+          code: 'invalid-numeric-value',
+          path: '$.slides[0].elements[0].crop.left',
+        }),
+        expect.objectContaining({
+          code: 'invalid-numeric-value',
+          path: '$.slides[0].elements[0].crop.top',
+        }),
+      ]),
+    );
   });
 
   it.each([

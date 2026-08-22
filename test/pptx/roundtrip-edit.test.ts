@@ -598,6 +598,7 @@ describe('PowerPoint round-trip text edit binding', () => {
   });
 
   it.each([
+    { bottom: 1.015, left: 0, right: 0, top: 0 },
     { bottom: 0, left: -100, right: 0, top: 0 },
     { bottom: 0, left: 100, right: -1, top: 0 },
   ])('accepts exact image crop boundary %j', (value) => {

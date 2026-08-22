@@ -24,6 +24,7 @@ const EMUS_PER_POINT = 12_700;
 const ANGLE_UNITS_PER_DEGREE = 60_000;
 const FONT_SIZE_UNITS_PER_POINT = 100;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const CROP_QUANTIZATION_EPSILON = 1e-7;
 const CHART_TYPES = [
   'barChart',
   'doughnutChart',
@@ -33,6 +34,16 @@ const CHART_TYPES = [
 
 type ValidationProfile = NonNullable<PptxSceneValidationOptions['profile']>;
 type CreationValidationProfile = Exclude<ValidationProfile, 'scene'>;
+
+export function isRepresentablePptxCropPercentage(value: unknown): boolean {
+  if (!Number.isFinite(value)) return false;
+  const scaled = (value as number) * 1_000;
+  const rounded = Math.round(scaled);
+  return (
+    Number.isSafeInteger(rounded) &&
+    Math.abs(scaled - rounded) <= CROP_QUANTIZATION_EPSILON
+  );
+}
 
 function isCreationProfile(
   profile: ValidationProfile,
@@ -845,6 +856,7 @@ function validateChartElement(
 function validateImageCrop(
   value: unknown,
   path: string,
+  profile: ValidationProfile,
   issues: PptxSceneValidationIssue[],
 ): void {
   const crop = requireObject(value, path, issues);
@@ -854,23 +866,28 @@ function validateImageCrop(
   let valid = true;
   for (const key of keys) {
     const percentage = crop[key];
-    if (
-      typeof percentage !== 'number' ||
-      !Number.isFinite(percentage) ||
-      percentage < -100 ||
-      percentage > 100 ||
-      !Number.isSafeInteger(percentage * 1_000)
+    if (!isRepresentablePptxCropPercentage(percentage)) {
+      valid = false;
+      addIssue(
+        issues,
+        'invalid-numeric-value',
+        `${path}.${key}`,
+        'Image crop must be a finite percentage with at most three decimal places',
+      );
+    } else if (
+      profile !== 'scene' &&
+      ((percentage as number) < -100 || (percentage as number) > 100)
     ) {
       valid = false;
       addIssue(
         issues,
         'invalid-numeric-value',
         `${path}.${key}`,
-        'Image crop must be a finite percentage from -100 through 100 with at most three decimal places',
+        'Native image crop must be from -100 through 100',
       );
     }
   }
-  if (!valid) return;
+  if (!valid || profile === 'scene') return;
   if (Number(crop.left) + Number(crop.right) >= 100) {
     addIssue(
       issues,
@@ -1027,7 +1044,7 @@ function validateElement(
   } else if (element.type === 'image') {
     rejectUnknownKeys(element, [...baseKeys, 'crop', 'mediaKey'], path, issues);
     if (element.crop !== undefined) {
-      validateImageCrop(element.crop, `${path}.crop`, issues);
+      validateImageCrop(element.crop, `${path}.crop`, profile, issues);
     }
     if (typeof element.mediaKey === 'string') {
       referenceKeys.push({

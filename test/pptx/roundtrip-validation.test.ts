@@ -388,6 +388,7 @@ describe('PowerPoint round-trip snapshot contract validation', () => {
     ).toBe(composed);
 
     for (const boundary of [
+      { bottom: 1.015, left: 0, right: 0, top: 0 },
       { bottom: 0, left: -100, right: 0, top: 0 },
       { bottom: 0, left: 100, right: -1, top: 0 },
     ]) {

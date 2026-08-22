@@ -2,7 +2,11 @@ import {
   assertPptxInputWithinLimits,
   type ResolvedPptxResourceLimits,
 } from '../internal/resource-limits';
-import { isValidXmlText, validatePptxScene } from '../scene-validation';
+import {
+  isRepresentablePptxCropPercentage,
+  isValidXmlText,
+  validatePptxScene,
+} from '../scene-validation';
 import type { PptxSceneElement, PptxSceneImageCrop } from '../scene-types';
 import { PptxWriteError } from '../write-error';
 import { canonicalJson } from './canonical-json';
@@ -307,13 +311,11 @@ function validateImageCrop(
   const crop = exactRecord(value, keys, message);
   for (const key of keys) {
     const percentage = crop[key];
-    if (!Number.isFinite(percentage)) invalidSnapshot(message);
+    if (!isRepresentablePptxCropPercentage(percentage)) {
+      invalidSnapshot(message);
+    }
     const numericPercentage = percentage as number;
-    if (
-      numericPercentage < -100 ||
-      numericPercentage > 100 ||
-      !Number.isSafeInteger(numericPercentage * 1_000)
-    ) {
+    if (numericPercentage < -100 || numericPercentage > 100) {
       invalidSnapshot(message);
     }
   }

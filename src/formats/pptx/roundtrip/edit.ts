@@ -1,6 +1,9 @@
 import { resolvePptxResourceLimits } from '../internal/resource-limits';
 import { RATIO_EMUs_Points } from '../../../common/ooxml/units';
-import { isValidXmlText } from '../scene-validation';
+import {
+  isRepresentablePptxCropPercentage,
+  isValidXmlText,
+} from '../scene-validation';
 import { PptxWriteError } from '../write-error';
 import { degreesToAngle, pointsToEmu } from '../writer/units';
 import type {
@@ -348,10 +351,9 @@ export function normalizePptxRoundTripImageCrop(
   for (const key of keys) {
     const percentage = value[key];
     if (
-      !Number.isFinite(percentage) ||
+      !isRepresentablePptxCropPercentage(percentage) ||
       percentage < -100 ||
-      percentage > 100 ||
-      !Number.isSafeInteger(percentage * 1_000)
+      percentage > 100
     ) {
       invalidEdit('PowerPoint image crop value has an invalid percentage');
     }
