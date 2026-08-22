@@ -5,6 +5,8 @@ import {
 import type { ResolvedXlsxResourceLimits } from '../internal/resource-limits';
 import type {
   XlsxCell,
+  XlsxChart,
+  XlsxChartDataSource,
   XlsxColumnRange,
   XlsxAutoFilter,
   XlsxDrawingObject,
@@ -15,7 +17,10 @@ import type {
 import { canonicalXlsxJson } from './canonical-json';
 import { canonicalXlsxSha256 } from './digest';
 import { XlsxWriteError } from './errors';
-import { transformXlsxStructuralSourceFormula } from './formula-reference';
+import {
+  transformXlsxStructuralSourceFormula,
+  xlsxStructuralSourceFormulaArea,
+} from './formula-reference';
 import {
   transformXlsxStructuralPageBreak,
   transformXlsxStructuralRange,
@@ -275,6 +280,58 @@ function blockStructuralFeature(
   if (blocked) structuralClosureFailure(operation, featureClass);
 }
 
+function visitChartFormulaReferences(
+  chart: XlsxChart,
+  visit: (formula: string, write: (formula: string) => void) => void,
+): void {
+  const text = (value: { formula?: string } | undefined): void => {
+    if (value?.formula !== undefined) {
+      visit(value.formula, (formula) => {
+        value.formula = formula;
+      });
+    }
+  };
+  const source = (value: XlsxChartDataSource | undefined): void => {
+    if (value?.formula !== undefined) {
+      visit(value.formula, (formula) => {
+        value.formula = formula;
+      });
+    }
+  };
+  text(chart.title);
+  for (const axis of chart.axes) text(axis.title);
+  for (const plot of chart.plots) {
+    for (const series of plot.series) {
+      text(series.name);
+      source(series.bubbleSizes);
+      source(series.categories);
+      source(series.values);
+      source(series.xValues);
+      source(series.yValues);
+    }
+  }
+}
+
+function visitDrawingCharts(
+  object: XlsxDrawingObject,
+  visit: (chart: XlsxChart) => void,
+): void {
+  if (object.kind === 'chart') visit(object);
+  else if (object.kind === 'group') {
+    for (const child of object.children) visitDrawingCharts(child, visit);
+  }
+}
+
+function drawingChartFormulaCount(object: XlsxDrawingObject): number {
+  let count = 0;
+  visitDrawingCharts(object, (chart) => {
+    visitChartFormulaReferences(chart, () => {
+      count += 1;
+    });
+  });
+  return count;
+}
+
 function assertStructuralClosure(
   document: XlsxRoundTripDocument,
   sheet: XlsxWorksheet,
@@ -404,20 +461,39 @@ function assertStructuralClosure(
       ) === null,
     );
   }
-  const drawingHasChart = (object: XlsxDrawingObject): boolean =>
-    object.kind === 'chart' ||
-    (object.kind === 'group' && object.children.some(drawingHasChart));
   for (const drawing of sheet.drawings) {
-    blockStructuralFeature(
-      operation,
-      'drawing-chart-reference',
-      drawingHasChart(drawing.object),
-    );
     blockStructuralFeature(
       operation,
       'drawing-anchor-deletion',
       transformXlsxStructuralDrawingAnchor(drawing, operation) === null,
     );
+    visitDrawingCharts(drawing.object, (chart) => {
+      visitChartFormulaReferences(chart, (formula) => {
+        const transformed = transformXlsxStructuralSourceFormula(
+          formula,
+          sheet.name,
+          sheet.name,
+          operation,
+        );
+        blockStructuralFeature(
+          operation,
+          'chart-formula-reference',
+          transformed.kind === 'unsupported',
+        );
+        blockStructuralFeature(
+          operation,
+          'chart-source-deletion',
+          transformed.kind === 'deleted',
+        );
+        blockStructuralFeature(
+          operation,
+          'chart-cache-cardinality',
+          transformed.kind === 'transformed' &&
+            xlsxStructuralSourceFormulaArea(formula) !==
+              xlsxStructuralSourceFormulaArea(transformed.expression),
+        );
+      });
+    });
   }
   for (const group of sheet.sparklineGroups ?? []) {
     for (const sparkline of group.sparklines) {
@@ -554,6 +630,22 @@ function transformStructuralLayoutReferences(
     ...drawing,
     ...transformXlsxStructuralDrawingAnchor(drawing, operation)!,
   }));
+  for (const drawing of sheet.drawings) {
+    visitDrawingCharts(drawing.object, (chart) => {
+      visitChartFormulaReferences(chart, (formula, write) => {
+        const transformed = transformXlsxStructuralSourceFormula(
+          formula,
+          sheet.name,
+          sheet.name,
+          operation,
+        ) as Extract<
+          ReturnType<typeof transformXlsxStructuralSourceFormula>,
+          { expression: string }
+        >;
+        write(transformed.expression);
+      });
+    });
+  }
   if (sheet.sparklineGroups !== undefined) {
     for (const group of sheet.sparklineGroups) {
       for (const sparkline of group.sparklines) {
@@ -938,7 +1030,8 @@ export async function replayXlsxCellOperations(
           (total, drawing) =>
             total +
             (drawing.from === undefined ? 0 : 1) +
-            (drawing.to === undefined ? 0 : 1),
+            (drawing.to === undefined ? 0 : 1) +
+            drawingChartFormulaCount(drawing.object),
           0,
         ) +
         (sheet.sparklineGroups?.reduce(

@@ -61,12 +61,32 @@ import {
   patchXlsxCommentVmlAnchors,
 } from './comment-structure-patch';
 import { patchXlsxDrawingStructure } from './drawing-structure-patch';
+import { patchXlsxChartStructure } from './chart-structure-patch';
 import { patchXlsxSparklineStructure } from './sparkline-structure-patch';
 
 export interface XlsxCellEditPackage {
   data: Uint8Array;
   graph: XlsxPackageGraph;
   parts: XlsxPartFidelity[];
+}
+
+export function xlsxStructuralRelationshipTargets(
+  graph: Pick<XlsxPackageGraph, 'relationships'>,
+  owner: string,
+  type: string,
+): string[] {
+  return [
+    ...new Set(
+      graph.relationships
+        .filter(
+          (relationship) =>
+            relationship.owner === owner &&
+            relationship.mode === 'internal' &&
+            relationship.type === type,
+        )
+        .map((relationship) => relationship.target),
+    ),
+  ];
 }
 
 const TABLE_STRUCTURAL_OPERATION_KINDS = new Set([
@@ -299,6 +319,8 @@ export async function writeXlsxCellEditPackage(
   let tableDependencyEdges = 0;
   let commentDependencyEdges = 0;
   let drawingDependencyEdges = 0;
+  let chartDependencyEdges = 0;
+  const visitedChartParts = new Set<string>();
   if (appendedStyles.length !== 0) {
     const part = context.styles.part!;
     const entry = archive.file(part)!;
@@ -527,14 +549,11 @@ export async function writeXlsxCellEditPackage(
       dirtyParts.add(commentPart);
     }
     const drawingRelationshipType = `${officeRelationshipNamespace}/drawing`;
-    const drawingParts = sourceGraph.relationships
-      .filter(
-        (relationship) =>
-          relationship.owner === part &&
-          relationship.mode === 'internal' &&
-          relationship.type === drawingRelationshipType,
-      )
-      .map((relationship) => relationship.target);
+    const drawingParts = xlsxStructuralRelationshipTargets(
+      sourceGraph,
+      part,
+      drawingRelationshipType,
+    );
     for (const drawingPart of drawingParts) {
       const drawingEntry = archive.file(drawingPart)!;
       const drawingSource = await readZipEntryBytes(
@@ -547,15 +566,51 @@ export async function writeXlsxCellEditPackage(
         writeLimits,
         drawingPart,
       );
-      if (drawingPatched.patchCount === 0) continue;
-      generatedXmlBytes += drawingPatched.data.byteLength;
-      patchBytes += drawingPatched.patchBytes;
-      patchCount += drawingPatched.patchCount;
-      drawingDependencyEdges += 1;
-      archive.file(drawingPart, drawingPatched.data, {
-        date: drawingEntry.date,
-      });
-      dirtyParts.add(drawingPart);
+      let drawingEdgeCharged = false;
+      if (drawingPatched.patchCount !== 0) {
+        generatedXmlBytes += drawingPatched.data.byteLength;
+        patchBytes += drawingPatched.patchBytes;
+        patchCount += drawingPatched.patchCount;
+        drawingDependencyEdges += 1;
+        drawingEdgeCharged = true;
+        archive.file(drawingPart, drawingPatched.data, {
+          date: drawingEntry.date,
+        });
+        dirtyParts.add(drawingPart);
+      }
+      const chartRelationshipType = `${officeRelationshipNamespace}/chart`;
+      const chartParts = xlsxStructuralRelationshipTargets(
+        sourceGraph,
+        drawingPart,
+        chartRelationshipType,
+      );
+      for (const chartPart of chartParts) {
+        if (visitedChartParts.has(chartPart)) continue;
+        visitedChartParts.add(chartPart);
+        const chartEntry = archive.file(chartPart)!;
+        const chartSource = await readZipEntryBytes(
+          chartEntry,
+          readerLimits.maxPartBytes,
+        );
+        const chartPatched = patchXlsxChartStructure(
+          chartSource,
+          requestedStructure,
+          writeLimits,
+          chartPart,
+          sheet.name,
+        );
+        if (chartPatched.patchCount === 0) continue;
+        generatedXmlBytes += chartPatched.data.byteLength;
+        patchBytes += chartPatched.patchBytes;
+        patchCount += chartPatched.patchCount;
+        if (!drawingEdgeCharged) {
+          drawingDependencyEdges += 1;
+          drawingEdgeCharged = true;
+        }
+        chartDependencyEdges += 1;
+        archive.file(chartPart, chartPatched.data, { date: chartEntry.date });
+        dirtyParts.add(chartPart);
+      }
     }
   }
   const dirtyPartCount = dirtyParts.size + addedParts.size;
@@ -580,6 +635,7 @@ export async function writeXlsxCellEditPackage(
   dependencyEdges += tableDependencyEdges;
   dependencyEdges += commentDependencyEdges;
   dependencyEdges += drawingDependencyEdges;
+  dependencyEdges += chartDependencyEdges;
   if (dependencyEdges > writeLimits.maxDependencyEdges) {
     writeLimitFailure(
       'maxDependencyEdges',

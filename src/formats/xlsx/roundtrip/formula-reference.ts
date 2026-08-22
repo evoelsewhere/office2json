@@ -83,6 +83,19 @@ function authoredReference(
   }${row}`;
 }
 
+export function xlsxStructuralSourceFormulaArea(
+  expression: string,
+): number | undefined {
+  const source = sourceTokens(expression);
+  if (source === undefined) return undefined;
+  const start = parseXlsxCellReference(source.start);
+  const end = parseXlsxCellReference(source.end);
+  if (!start || !end || start.row > end.row || start.column > end.column) {
+    return undefined;
+  }
+  return (end.row - start.row + 1) * (end.column - start.column + 1);
+}
+
 /**
  * Rewrites the single local A1 cell/range grammar used by sparkline source
  * formulas. Names, external books, 3-D ranges, unions, and arbitrary formula

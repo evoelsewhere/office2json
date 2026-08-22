@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { transformXlsxStructuralSourceFormula } from '../../src/formats/xlsx/roundtrip/formula-reference';
+import {
+  transformXlsxStructuralSourceFormula,
+  xlsxStructuralSourceFormulaArea,
+} from '../../src/formats/xlsx/roundtrip/formula-reference';
 
 describe('XLSX structural source formulas', () => {
+  it('computes the exact referenced cell cardinality', () => {
+    expect(xlsxStructuralSourceFormulaArea("'Data'!$A$1:$B$3")).toBe(6);
+    expect(xlsxStructuralSourceFormulaArea('XFD1048576')).toBe(1);
+    expect(xlsxStructuralSourceFormulaArea('A3:A1')).toBeUndefined();
+    expect(xlsxStructuralSourceFormulaArea('C1:A1')).toBeUndefined();
+    expect(xlsxStructuralSourceFormulaArea('SUM(A1:A3)')).toBeUndefined();
+  });
   it('transforms local cells and ranges while preserving absolute markers', () => {
     expect(
       transformXlsxStructuralSourceFormula('$A$1:B3', 'Data', 'Data', {

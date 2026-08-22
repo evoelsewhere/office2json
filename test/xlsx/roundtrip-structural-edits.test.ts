@@ -13,6 +13,7 @@ import {
   patchXlsxCommentVmlAnchors,
 } from '../../src/formats/xlsx/roundtrip/comment-structure-patch';
 import { patchXlsxDrawingStructure } from '../../src/formats/xlsx/roundtrip/drawing-structure-patch';
+import { patchXlsxChartStructure } from '../../src/formats/xlsx/roundtrip/chart-structure-patch';
 import { patchXlsxSparklineStructure } from '../../src/formats/xlsx/roundtrip/sparkline-structure-patch';
 import { patchXlsxWorksheetStructure } from '../../src/formats/xlsx/roundtrip/worksheet-structure-patch';
 import { defaultXlsxWriteLimits } from '../../src/formats/xlsx/roundtrip/write-limits';
@@ -788,6 +789,232 @@ describe('XLSX verified structural row and column edits', () => {
       ]),
     ).rejects.toMatchObject({
       diagnostic: { featureClass: 'sparkline-source-deletion' },
+    });
+  });
+
+  it('keeps supported chart sources, caches, and anchors aligned', async () => {
+    const drawingNamespace =
+      'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing';
+    const drawingMainNamespace =
+      'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const chartNamespace =
+      'http://schemas.openxmlformats.org/drawingml/2006/chart';
+    const contentTypes = `<Types xmlns="${XLSX_CONTENT_TYPES_NS}"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/><Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>`;
+    const marker = `<xdr:from><xdr:col>3</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>3</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>`;
+    const drawing = `<xdr:wsDr xmlns:xdr="${drawingNamespace}" xmlns:a="${drawingMainNamespace}" xmlns:c="${chartNamespace}" xmlns:r="${XLSX_OFFICE_REL_NS}"><xdr:oneCellAnchor>${marker}<xdr:ext cx="12700" cy="12700"/><xdr:graphicFrame><xdr:nvGraphicFramePr><xdr:cNvPr id="1" name="Chart 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="12700" cy="12700"/></xdr:xfrm><a:graphic><a:graphicData uri="${chartNamespace}"><c:chart r:id="chart"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>`;
+    const stringSource = `<c:strRef><c:f>Sheet1!$A$2:$A$3</c:f><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt></c:strCache></c:strRef>`;
+    const numberSource = `<c:numRef><c:f>Sheet1!$B$2:$B$3</c:f><c:numCache><c:formatCode>0</c:formatCode><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef>`;
+    const chart = `<c:chartSpace xmlns:c="${chartNamespace}"><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/><c:cat>${stringSource}</c:cat><c:val>${numberSource}</c:val></c:ser><c:axId val="1"/><c:axId val="2"/></c:barChart><c:catAx><c:axId val="1"/><c:scaling/><c:delete val="0"/><c:crossAx val="2"/></c:catAx><c:valAx><c:axId val="2"/><c:scaling/><c:delete val="0"/><c:crossAx val="1"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    const generatedSource = await createIndependentXlsx({
+      '[Content_Types].xml': contentTypes,
+      'xl/charts/chart1.xml': chart,
+      'xl/drawings/_rels/drawing1.xml.rels': `<Relationships xmlns="${XLSX_PACKAGE_REL_NS}"><Relationship Id="chart" Type="${XLSX_OFFICE_REL_TYPE}chart" Target="../charts/chart1.xml"/></Relationships>`,
+      'xl/drawings/drawing1.xml': drawing,
+      'xl/worksheets/_rels/sheet1.xml.rels': `<Relationships xmlns="${XLSX_PACKAGE_REL_NS}"><Relationship Id="drawing" Type="${XLSX_OFFICE_REL_TYPE}drawing" Target="../drawings/drawing1.xml"/></Relationships>`,
+      'xl/worksheets/sheet1.xml': `<worksheet xmlns="${XLSX_SPREADSHEET_NS}" xmlns:r="${XLSX_OFFICE_REL_NS}"><sheetData><row r="1"><c r="A1"><v>0</v></c></row><row r="2"><c r="A2"><v>1</v></c><c r="B2"><v>1</v></c></row><row r="3"><c r="A3"><v>2</v></c><c r="B3"><v>2</v></c></row></sheetData><drawing r:id="drawing"/></worksheet>`,
+    });
+    const datedSource = await JSZip.loadAsync(generatedSource);
+    const chartDate = new Date('2004-05-06T07:08:10.000Z');
+    datedSource.file(
+      'xl/charts/chart1.xml',
+      await datedSource.file('xl/charts/chart1.xml')!.async('uint8array'),
+      { date: chartDate },
+    );
+    const source = await datedSource.generateAsync({ type: 'uint8array' });
+    const snapshot = await readXlsxRoundTrip(source);
+    const sheetKey = snapshot.document.sheets[0]!.key;
+    const operation = {
+      count: 1,
+      index: 1,
+      kind: 'insert-rows' as const,
+      operationId: 'move-chart-ranges',
+      sheetKey,
+    };
+    const edited = await applyXlsxEdits(snapshot, [operation]);
+    const previewSheet = edited.document.sheets[0]!;
+    expect(previewSheet.kind).toBe('worksheet');
+    if (previewSheet.kind !== 'worksheet')
+      throw new Error('Expected worksheet');
+    const previewChart = previewSheet.drawings[0]!.object;
+    expect(previewChart.kind).toBe('chart');
+    if (previewChart.kind !== 'chart') throw new Error('Expected chart');
+    expect(previewChart.plots[0]!.series[0]!.categories?.formula).toBe(
+      'Sheet1!$A$3:$A$4',
+    );
+    expect(previewChart.plots[0]!.series[0]!.values?.formula).toBe(
+      'Sheet1!$B$3:$B$4',
+    );
+    expect(previewSheet.drawings[0]!.from).toMatchObject({ row: 5 });
+    const result = await writeXlsxRoundTrip(portable(edited));
+    expect(result.report.level).toBe('R2');
+    expect(
+      result.report.parts
+        .filter((part) => part.disposition === 'patch')
+        .map((part) => part.name),
+    ).toEqual([
+      'xl/charts/chart1.xml',
+      'xl/drawings/drawing1.xml',
+      'xl/worksheets/sheet1.xml',
+    ]);
+    const parsed = await parseXlsx(result.data, { errorMode: 'strict' });
+    const outputSheet = parsed.sheets[0]!;
+    expect(outputSheet.kind).toBe('worksheet');
+    if (outputSheet.kind !== 'worksheet') throw new Error('Expected worksheet');
+    const outputChart = outputSheet.drawings[0]!.object;
+    expect(outputChart.kind).toBe('chart');
+    if (outputChart.kind !== 'chart') throw new Error('Expected chart');
+    expect(outputChart.plots[0]!.series[0]!.categories).toMatchObject({
+      formula: 'Sheet1!$A$3:$A$4',
+      pointCount: 2,
+      points: [
+        { index: 0, value: 'Q1' },
+        { index: 1, value: 'Q2' },
+      ],
+    });
+    expect(
+      (await JSZip.loadAsync(result.data)).file('xl/charts/chart1.xml')!.date,
+    ).toEqual(chartDate);
+    const zip = await JSZip.loadAsync(source);
+    const request = {
+      count: operation.count,
+      index: operation.index,
+      kind: operation.kind,
+      operationId: operation.operationId,
+    };
+    const worksheetPatch = patchXlsxWorksheetStructure(
+      await zip.file('xl/worksheets/sheet1.xml')!.async('uint8array'),
+      [request],
+      defaultXlsxWriteLimits(),
+      'xl/worksheets/sheet1.xml',
+    );
+    const drawingPatch = patchXlsxDrawingStructure(
+      await zip.file('xl/drawings/drawing1.xml')!.async('uint8array'),
+      [request],
+      defaultXlsxWriteLimits(),
+      'xl/drawings/drawing1.xml',
+    );
+    const chartPatch = patchXlsxChartStructure(
+      await zip.file('xl/charts/chart1.xml')!.async('uint8array'),
+      [request],
+      defaultXlsxWriteLimits(),
+      'xl/charts/chart1.xml',
+      'Sheet1',
+    );
+    const patchBytes =
+      worksheetPatch.patchBytes +
+      drawingPatch.patchBytes +
+      chartPatch.patchBytes;
+    const patchCount =
+      worksheetPatch.patchCount +
+      drawingPatch.patchCount +
+      chartPatch.patchCount;
+    const generatedXmlBytes =
+      worksheetPatch.data.byteLength +
+      drawingPatch.data.byteLength +
+      chartPatch.data.byteLength;
+    await expect(
+      writeXlsxRoundTrip(portable(edited), {
+        limits: {
+          maxDependencyEdges: 3,
+          maxDirtyParts: 3,
+          maxGeneratedXmlBytes: generatedXmlBytes,
+          maxPatchBytes: patchBytes,
+          maxPatchCount: patchCount,
+          maxPatchedParts: 3,
+        },
+      }),
+    ).resolves.toMatchObject({ report: { level: 'R2' } });
+    for (const [limitName, limit] of [
+      ['maxDependencyEdges', 2],
+      ['maxDirtyParts', 2],
+      ['maxGeneratedXmlBytes', generatedXmlBytes - 1],
+      ['maxPatchBytes', patchBytes - 1],
+      ['maxPatchCount', patchCount - 1],
+      ['maxPatchedParts', 2],
+    ] as const) {
+      await expect(
+        writeXlsxRoundTrip(portable(edited), {
+          limits: { [limitName]: limit },
+        }),
+      ).rejects.toMatchObject({
+        diagnostic: { code: 'resource-limit-exceeded', limitName },
+      });
+    }
+    const chartOnlyContentTypes = contentTypes.replace(
+      '</Types>',
+      '<Override PartName="/xl/drawings/drawing2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/><Override PartName="/xl/charts/chart2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/><Override PartName="/xl/charts/chart3.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>',
+    );
+    const drawingAtA1 = drawing.replace(
+      '<xdr:col>3</xdr:col>',
+      '<xdr:col>0</xdr:col>',
+    );
+    const literalChart = `<c:chartSpace xmlns:c="${chartNamespace}"><c:chart/></c:chartSpace>`;
+    const chartOnlySource = await createIndependentXlsx({
+      '[Content_Types].xml': chartOnlyContentTypes,
+      'xl/charts/chart1.xml': chart,
+      'xl/charts/chart2.xml': chart,
+      'xl/charts/chart3.xml': literalChart,
+      'xl/drawings/_rels/drawing1.xml.rels': `<Relationships xmlns="${XLSX_PACKAGE_REL_NS}"><Relationship Id="chart" Type="${XLSX_OFFICE_REL_TYPE}chart" Target="../charts/chart1.xml"/><Relationship Id="chart-two" Type="${XLSX_OFFICE_REL_TYPE}chart" Target="../charts/chart2.xml"/><Relationship Id="literal" Type="${XLSX_OFFICE_REL_TYPE}chart" Target="../charts/chart3.xml"/></Relationships>`,
+      'xl/drawings/_rels/drawing2.xml.rels': `<Relationships xmlns="${XLSX_PACKAGE_REL_NS}"><Relationship Id="shared" Type="${XLSX_OFFICE_REL_TYPE}chart" Target="../charts/chart1.xml"/></Relationships>`,
+      'xl/drawings/drawing1.xml': drawingAtA1,
+      'xl/drawings/drawing2.xml': drawingAtA1,
+      'xl/worksheets/_rels/sheet1.xml.rels': `<Relationships xmlns="${XLSX_PACKAGE_REL_NS}"><Relationship Id="drawing" Type="${XLSX_OFFICE_REL_TYPE}drawing" Target="../drawings/drawing1.xml"/><Relationship Id="unused-drawing" Type="${XLSX_OFFICE_REL_TYPE}drawing" Target="../drawings/drawing2.xml"/></Relationships>`,
+      'xl/worksheets/sheet1.xml': `<worksheet xmlns="${XLSX_SPREADSHEET_NS}" xmlns:r="${XLSX_OFFICE_REL_NS}"><sheetData><row r="1"><c r="A1"><v>0</v></c></row><row r="2"><c r="A2"><v>1</v></c><c r="B2"><v>1</v></c></row><row r="3"><c r="A3"><v>2</v></c><c r="B3"><v>2</v></c></row></sheetData><drawing r:id="drawing"/></worksheet>`,
+    });
+    const chartOnlySnapshot = await readXlsxRoundTrip(chartOnlySource);
+    const chartOnlyEdited = await applyXlsxEdits(chartOnlySnapshot, [
+      {
+        count: 1,
+        index: 2,
+        kind: 'insert-columns',
+        operationId: 'chart-only-range-shift',
+        sheetKey: chartOnlySnapshot.document.sheets[0]!.key,
+      },
+    ]);
+    const chartOnlyResult = await writeXlsxRoundTrip(chartOnlyEdited, {
+      limits: { maxDependencyEdges: 4 },
+    });
+    expect(
+      chartOnlyResult.report.parts
+        .filter((part) => part.disposition === 'patch')
+        .map((part) => part.name),
+    ).toEqual([
+      'xl/charts/chart1.xml',
+      'xl/charts/chart2.xml',
+      'xl/worksheets/sheet1.xml',
+    ]);
+    for (const copied of [
+      'xl/charts/chart3.xml',
+      'xl/drawings/drawing1.xml',
+      'xl/drawings/drawing2.xml',
+    ]) {
+      expect(
+        chartOnlyResult.report.parts.find((part) => part.name === copied)
+          ?.disposition,
+      ).toBe('copy');
+    }
+    await expect(
+      writeXlsxRoundTrip(chartOnlyEdited, {
+        limits: { maxDependencyEdges: 3 },
+      }),
+    ).rejects.toMatchObject({
+      diagnostic: {
+        code: 'resource-limit-exceeded',
+        limitName: 'maxDependencyEdges',
+      },
+    });
+    await expect(
+      applyXlsxEdits(snapshot, [
+        {
+          count: 1,
+          index: 3,
+          kind: 'insert-rows',
+          operationId: 'expand-chart-cache',
+          sheetKey,
+        },
+      ]),
+    ).rejects.toMatchObject({
+      diagnostic: { featureClass: 'chart-cache-cardinality' },
     });
   });
 });

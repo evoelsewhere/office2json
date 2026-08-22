@@ -46,7 +46,9 @@ const COMMENT_RELATIONSHIP_KINDS = new Set([
 ]);
 const DRAWING_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.drawing+xml';
-const DRAWING_RELATIONSHIP_KINDS = new Set(['drawing', 'image']);
+const CHART_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.drawingml.chart+xml';
+const DRAWING_RELATIONSHIP_KINDS = new Set(['chart', 'drawing', 'image']);
 
 function editFailure(
   code:
@@ -95,6 +97,7 @@ export function assertXlsxSafeCellEditSource(
     (allowCommentAnchors && COMMENT_CONTENT_TYPES.has(contentType)) ||
     (allowDrawingAnchors &&
       (contentType === DRAWING_CONTENT_TYPE ||
+        contentType === CHART_CONTENT_TYPE ||
         contentType.startsWith('image/')));
   const containsVml = graph.parts.some(
     (part) =>

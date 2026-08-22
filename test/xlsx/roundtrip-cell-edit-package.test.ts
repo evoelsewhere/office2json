@@ -13,6 +13,7 @@ import {
   verifyXlsxCellEditR1Parts,
   xlsxCellEditPartTopologyEqual,
 } from '../../src/formats/xlsx/roundtrip/cell-edit-verification';
+import { xlsxStructuralRelationshipTargets } from '../../src/formats/xlsx/roundtrip/cell-edit-package';
 import { XlsxWriteError } from '../../src/formats/xlsx/roundtrip/errors';
 import type { XlsxPackageGraph } from '../../src/formats/xlsx/roundtrip/internal/package-graph';
 import { readXlsxRoundTrip } from '../../src/formats/xlsx/roundtrip/read-snapshot';
@@ -110,6 +111,61 @@ function fakeArchive(
 }
 
 describe('XLSX cell-edit package verification', () => {
+  it('selects exact internal structural relationship targets once in authored order', () => {
+    const relationshipType =
+      'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart';
+    const relationships: XlsxPackageGraph['relationships'] = [
+      {
+        id: 'exact-a',
+        mode: 'internal',
+        owner: 'xl/drawings/drawing1.xml',
+        target: 'xl/charts/chart1.xml',
+        type: relationshipType,
+      },
+      {
+        id: 'duplicate-a',
+        mode: 'internal',
+        owner: 'xl/drawings/drawing1.xml',
+        target: 'xl/charts/chart1.xml',
+        type: relationshipType,
+      },
+      {
+        id: 'exact-b',
+        mode: 'internal',
+        owner: 'xl/drawings/drawing1.xml',
+        target: 'xl/charts/chart2.xml',
+        type: relationshipType,
+      },
+      {
+        id: 'foreign-owner',
+        mode: 'internal',
+        owner: 'xl/drawings/drawing2.xml',
+        target: 'xl/charts/foreign.xml',
+        type: relationshipType,
+      },
+      {
+        id: 'external',
+        mode: 'external',
+        owner: 'xl/drawings/drawing1.xml',
+        target: 'https://example.invalid/chart.xml',
+        type: relationshipType,
+      },
+      {
+        id: 'wrong-type',
+        mode: 'internal',
+        owner: 'xl/drawings/drawing1.xml',
+        target: 'xl/charts/wrong.xml',
+        type: 'http://example.invalid/relationships/chart',
+      },
+    ];
+    expect(
+      xlsxStructuralRelationshipTargets(
+        { relationships },
+        'xl/drawings/drawing1.xml',
+        relationshipType,
+      ),
+    ).toEqual(['xl/charts/chart1.xml', 'xl/charts/chart2.xml']);
+  });
   it.each([
     'application/vnd.openxmlformats-officedocument.custom-properties+xml',
     'application/vnd.openxmlformats-officedocument.extended-properties+xml',
@@ -471,18 +527,25 @@ describe('XLSX cell-edit package verification', () => {
   });
 
   it('allows drawing and image dependencies only for structural closure', () => {
-    for (const [index, contentType, relationshipKind] of [
+    for (const [index, contentType, relationshipKind, name] of [
       [
         0,
         'application/vnd.openxmlformats-officedocument.drawing+xml',
         'drawing',
+        'xl/drawings/drawing1.xml',
       ],
-      [1, 'image/png', 'image'],
+      [1, 'image/png', 'image', 'xl/media/image1.png'],
+      [
+        2,
+        'application/vnd.openxmlformats-officedocument.drawingml.chart+xml',
+        'chart',
+        'xl/charts/chart1.xml',
+      ],
     ] as const) {
       const part = {
         byteLength: 1,
         contentType,
-        name: index === 0 ? 'xl/drawings/drawing1.xml' : 'xl/media/image1.png',
+        name,
         relationshipPart: false,
         sha256: String(index + 1).repeat(64),
       };

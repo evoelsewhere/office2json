@@ -131,6 +131,7 @@ export const mutatedFiles = [
   'src/formats/xlsx/roundtrip/cell-edit-policy.ts',
   'src/formats/xlsx/roundtrip/cell-edit-verification.ts',
   'src/formats/xlsx/roundtrip/capability.ts',
+  'src/formats/xlsx/roundtrip/chart-structure-patch.ts',
   'src/formats/xlsx/roundtrip/data-tree.ts',
   'src/formats/xlsx/roundtrip/digest.ts',
   'src/formats/xlsx/roundtrip/drawing-structure-patch.ts',

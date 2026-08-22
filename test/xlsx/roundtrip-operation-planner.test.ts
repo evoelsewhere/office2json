@@ -22,6 +22,7 @@ import {
   resolveXlsxWriteLimits,
 } from '../../src/formats/xlsx/roundtrip/write-limits';
 import type {
+  XlsxChart,
   XlsxDrawing,
   XlsxSparklineGroup,
   XlsxTable,
@@ -166,6 +167,53 @@ function structuralDrawing(overrides: Partial<XlsxDrawing> = {}): XlsxDrawing {
     },
     selectionRelation: 'full-sheet',
     ...overrides,
+  };
+}
+
+function structuralChart(formula = 'SUM(A1:A3)'): XlsxChart {
+  return {
+    axes: [],
+    autoTitleDeleted: false,
+    displayBlanksAs: 'gap',
+    hidden: false,
+    id: 2,
+    kind: 'chart',
+    name: 'Chart 2',
+    part: 'xl/charts/chart1.xml',
+    plots: [
+      {
+        axisIds: [],
+        series: [
+          {
+            categories: {
+              formula,
+              kind: 'string',
+              pointCount: 2,
+              points: [
+                { index: 0, value: 'A' },
+                { index: 1, value: 'B' },
+              ],
+            },
+            index: 0,
+            order: 0,
+          },
+        ],
+        type: 'bar',
+        varyColors: false,
+      },
+    ],
+    plotVisibleOnly: true,
+    roundedCorners: false,
+    showDataLabelsOverMaximum: false,
+    transform: {
+      flipHorizontal: false,
+      flipVertical: false,
+      height: 10,
+      rotation: 0,
+      width: 10,
+      x: 0,
+      y: 0,
+    },
   };
 }
 
@@ -2761,19 +2809,19 @@ describe('XLSX cell operation planner', () => {
           void setSheetField(document, 'dataValidations', [{ formula2: 'A1' }]),
       ],
       [
-        'drawing-chart-reference',
+        'chart-formula-reference',
         (document) =>
           void setSheetField(document, 'drawings', [
-            structuralDrawing({ object: { kind: 'chart' } as never }),
+            structuralDrawing({ object: structuralChart() }),
           ]),
       ],
       [
-        'drawing-chart-reference',
+        'chart-formula-reference',
         (document) =>
           void setSheetField(document, 'drawings', [
             structuralDrawing({
               object: {
-                children: [{ kind: 'chart' }, structuralDrawing().object],
+                children: [structuralChart(), structuralDrawing().object],
                 kind: 'group',
               } as never,
             }),
@@ -3010,6 +3058,152 @@ describe('XLSX cell operation planner', () => {
         featureClass,
       });
     }
+    const chartDocument = structuredClone(snapshot.document);
+    const chartObject = structuralChart('Sheet1!A2:A3');
+    chartObject.title = { formula: 'Sheet1!B2', text: 'Title' };
+    chartObject.axes = [
+      {
+        deleted: false,
+        id: 1,
+        kind: 'category',
+        majorGridlines: false,
+        minorGridlines: false,
+        orientation: 'min-max',
+        title: { formula: 'Sheet1!C2', text: 'Axis' },
+      },
+    ];
+    const chartSeries = chartObject.plots[0]!.series[0]!;
+    chartSeries.name = { formula: 'Sheet1!D2', text: 'Series' };
+    chartSeries.bubbleSizes = {
+      formula: 'Sheet1!E2:E3',
+      kind: 'number',
+      pointCount: 2,
+      points: [
+        { index: 0, value: 1 },
+        { index: 1, value: 2 },
+      ],
+    };
+    chartSeries.values = structuredClone(chartSeries.bubbleSizes);
+    chartSeries.values.formula = 'Sheet1!F2:F3';
+    chartSeries.xValues = structuredClone(chartSeries.bubbleSizes);
+    chartSeries.xValues.formula = 'Sheet1!G2:G3';
+    chartSeries.yValues = structuredClone(chartSeries.bubbleSizes);
+    chartSeries.yValues.formula = 'Other!H2:H3';
+    worksheet(chartDocument).drawings = [
+      structuralDrawing({ object: chartObject }),
+    ];
+    const chartResult = await replayXlsxCellOperations(
+      chartDocument,
+      [
+        {
+          count: 1,
+          index: 1,
+          kind: 'insert-rows',
+          operationId: 'move-chart-source',
+          sheetKey,
+        },
+      ],
+      writeLimits,
+      readerLimits,
+    );
+    const transformedChart = worksheet(chartResult.document).drawings[0]!
+      .object as XlsxChart;
+    expect(transformedChart.plots[0]!.series[0]!.categories?.formula).toBe(
+      'Sheet1!A3:A4',
+    );
+    expect(transformedChart.title?.formula).toBe('Sheet1!B3');
+    expect(transformedChart.axes[0]?.title?.formula).toBe('Sheet1!C3');
+    expect(transformedChart.plots[0]!.series[0]).toMatchObject({
+      bubbleSizes: { formula: 'Sheet1!E3:E4' },
+      name: { formula: 'Sheet1!D3' },
+      values: { formula: 'Sheet1!F3:F4' },
+      xValues: { formula: 'Sheet1!G3:G4' },
+      yValues: { formula: 'Other!H2:H3' },
+    });
+    expect(
+      (
+        await captureAsync(() =>
+          replayXlsxCellOperations(
+            chartDocument,
+            [
+              {
+                count: 1,
+                index: 3,
+                kind: 'insert-rows',
+                operationId: 'expand-chart-source',
+                sheetKey,
+              },
+            ],
+            writeLimits,
+            readerLimits,
+          ),
+        )
+      ).diagnostic,
+    ).toMatchObject({ featureClass: 'chart-cache-cardinality' });
+    expect(
+      (
+        await captureAsync(() =>
+          replayXlsxCellOperations(
+            chartDocument,
+            [
+              {
+                count: 2,
+                index: 2,
+                kind: 'delete-rows',
+                operationId: 'delete-chart-source',
+                sheetKey,
+              },
+            ],
+            writeLimits,
+            readerLimits,
+          ),
+        )
+      ).diagnostic,
+    ).toMatchObject({
+      code: 'unsupported-edit-operation',
+      featureClass: 'chart-source-deletion',
+      message:
+        'XLSX structural edit requires a reference-free worksheet closure',
+    });
+    const chartBudgetDocument = structuredClone(chartDocument);
+    worksheet(chartBudgetDocument).rows = [];
+    delete worksheet(chartBudgetDocument).declaredDimension;
+    await expect(
+      replayXlsxCellOperations(
+        chartBudgetDocument,
+        [
+          {
+            count: 1,
+            index: 1,
+            kind: 'insert-rows',
+            operationId: 'chart-reference-budget',
+            sheetKey,
+          },
+        ],
+        { ...writeLimits, maxReferenceUpdates: 9 },
+        readerLimits,
+      ),
+    ).resolves.toBeDefined();
+    expect(
+      (
+        await captureAsync(() =>
+          replayXlsxCellOperations(
+            chartBudgetDocument,
+            [
+              {
+                count: 1,
+                index: 1,
+                kind: 'insert-rows',
+                operationId: 'chart-reference-budget',
+                sheetKey,
+              },
+            ],
+            { ...writeLimits, maxReferenceUpdates: 8 },
+            readerLimits,
+          ),
+        )
+      ).diagnostic,
+    ).toMatchObject({ actual: 9, limit: 8, limitName: 'maxReferenceUpdates' });
     const drawingBudgetDocument = structuredClone(snapshot.document);
     const drawingBudgetSheet = worksheet(drawingBudgetDocument);
     drawingBudgetSheet.rows = [];
