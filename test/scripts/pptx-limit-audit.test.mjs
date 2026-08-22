@@ -44,9 +44,11 @@ describe('PowerPoint remaining-limit audit', () => {
       /\| Groups\s+\|[^\n]+nested plain text\s+\| Complete\s+\|/,
     );
     expect(audit).toMatch(
-      /\| Images\s+\|[^\n]+crop add\/replace\/remove[^\n]+Certification pending\s+\|/,
+      /\| Images\s+\|[^\n]+crop add\/replace\/remove[^\n]+Complete\s+\|/,
     );
     expect(audit).toContain('24,318 mutants');
+    expect(audit).toContain('24,859 mutants');
+    expect(audit).toContain('19,152 killed');
     expect(audit).toContain('zero missed');
     expect(audit).toContain('strict mutation threshold at 100%');
     expect(readme).toContain(

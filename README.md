@@ -19,9 +19,9 @@ meaningful document data instead of raw XML.
 > include bounded reading, producer-verified text-profile `C3` creation,
 > byte-exact `R0` portable hand-offs, producer-verified `R3` plain-text and text
 > transform editing, runtime-verified native shape/image/table/group/chart `C2`
-> creation, native transform plus table/nested-group plain-text `R2` editing,
-> and Office-free SVG/PNG previews. Excel and Word remain product direction
-> rather than completed APIs.
+> creation, native transform/image-crop plus table/nested-group plain-text `R2`
+> editing, and Office-free SVG/PNG previews. Excel and Word remain product
+> direction rather than completed APIs.
 
 ## Real-world PowerPoint evidence
 
@@ -87,11 +87,11 @@ agent runtime, tool-calling protocol, or vector database.
 
 ## Format support
 
-| Format               | Read | Create                                            | Edit                                            | Preserve      | Preview |
-| -------------------- | ---- | ------------------------------------------------- | ----------------------------------------------- | ------------- | ------- |
-| PowerPoint (`.pptx`) | Yes  | Text C3 + native shape/image/table/group/chart C2 | Text R3 + native transforms/table/group text R2 | Byte-exact R0 | SVG/PNG |
-| Excel (`.xlsx`)      | No   | No                                                | No                                              | No            | No      |
-| Word (`.docx`)       | No   | No                                                | No                                              | No            | No      |
+| Format               | Read | Create                                            | Edit                                                 | Preserve      | Preview |
+| -------------------- | ---- | ------------------------------------------------- | ---------------------------------------------------- | ------------- | ------- |
+| PowerPoint (`.pptx`) | Yes  | Text C3 + native shape/image/table/group/chart C2 | Text R3 + native transforms/crop/table/group text R2 | Byte-exact R0 | SVG/PNG |
+| Excel (`.xlsx`)      | No   | No                                                | No                                                   | No            | No      |
+| Word (`.docx`)       | No   | No                                                | No                                                   | No            | No      |
 
 The runtime reports `C2` after deterministic package construction, strict
 reparse, semantic comparison, and Office-free rendering. The declared
@@ -103,7 +103,7 @@ unchanged source package is restored byte for byte through runtime or portable
 JSON. The `pptx-create-native-v1` and `pptx-roundtrip-native-v1` profiles add
 runtime-verified non-text shape/image/table/group/chart creation and slide-owned,
 including nested, shape/image/table/group/chart transforms plus bounded native
-table-cell and nested-group text replacement; they do not yet claim
+image crop, table-cell, and nested-group text edits; they do not yet claim
 producer-elevated C3/R3. These profile levels
 do not claim arbitrary PPTX editing, full
 reconstruction from normalized JSON, or pixel-identical rendering.

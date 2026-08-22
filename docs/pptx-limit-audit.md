@@ -22,15 +22,15 @@ documentation all agree.
 
 ## Current native baseline
 
-| Domain       | Source-free creation                                       | Source-preserving edit                                           | Current status        |
-| ------------ | ---------------------------------------------------------- | ---------------------------------------------------------------- | --------------------- |
-| Text         | Structured bodies, paragraphs, runs, fields, and breaks    | Plain-run replacement and frame transform                        | Complete              |
-| Shapes       | Rect, roundRect, ellipse, fill, line, and transform        | Empty-shape transform                                            | Complete              |
-| Images       | Signature-checked PNG/JPEG media, crop, and native `p:pic` | Picture transform and crop add/replace/remove; media bytes exact | Certification pending |
-| Tables       | Grid, cells, text, fills, borders, and rectangular merges  | Frame/grid transform and single plain cell-run replacement       | Complete              |
-| Groups       | Recursive native children and explicit child space         | Nested group/descendant transforms and nested plain text         | Complete              |
-| Charts       | Bar, line, pie, and doughnut with literal ChartML caches   | Chart-frame transform; ChartML remains byte-exact                | Complete              |
-| Preservation | N/A                                                        | No-op byte-exact `R0`; untouched dirty-neighbor parts exact      | Complete              |
+| Domain       | Source-free creation                                       | Source-preserving edit                                           | Current status |
+| ------------ | ---------------------------------------------------------- | ---------------------------------------------------------------- | -------------- |
+| Text         | Structured bodies, paragraphs, runs, fields, and breaks    | Plain-run replacement and frame transform                        | Complete       |
+| Shapes       | Rect, roundRect, ellipse, fill, line, and transform        | Empty-shape transform                                            | Complete       |
+| Images       | Signature-checked PNG/JPEG media, crop, and native `p:pic` | Picture transform and crop add/replace/remove; media bytes exact | Complete       |
+| Tables       | Grid, cells, text, fills, borders, and rectangular merges  | Frame/grid transform and single plain cell-run replacement       | Complete       |
+| Groups       | Recursive native children and explicit child space         | Nested group/descendant transforms and nested plain text         | Complete       |
+| Charts       | Bar, line, pie, and doughnut with literal ChartML caches   | Chart-frame transform; ChartML remains byte-exact                | Complete       |
+| Preservation | N/A                                                        | No-op byte-exact `R0`; untouched dirty-neighbor parts exact      | Complete       |
 
 The table-cell operation reuses the integrity-bound `replace-text` contract.
 Targets use keys such as
@@ -52,6 +52,19 @@ Certification evidence for this capability row:
   killed, 5,544 compile errors, and zero missed.
 - The local full gate passed 169 test files / 3,702 tests, three seeded fuzz
   tests, ESM/CJS/declaration builds, and packed-package smoke.
+
+Image-crop certification evidence:
+
+- [CI run 32598845505](https://github.com/evoelsewhere/oakit/actions/runs/32598845505):
+  30/30 jobs passed across Node 20/22/24, Chromium/Firefox/WebKit, package
+  smoke, and the dedicated crop mutation module.
+- [Reliability run 32598979960](https://github.com/evoelsewhere/oakit/actions/runs/32598979960):
+  61/61 jobs passed, including the 413-slide Google Slides producer corpus,
+  render/memory gates, full-file mutation, shape mutation, and strict merge.
+- The merged report covers 109 files and 24,859 mutants: 19,152 killed, 5,707
+  compile errors, and zero missed.
+- Node 22 executed 171 test files / 3,786 tests plus three seeded fuzz tests;
+  the same CI run passed Node 20/24, 39 browser cases, build, and package smoke.
 
 ## Remaining native feature gaps
 
