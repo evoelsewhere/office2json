@@ -23,6 +23,7 @@ import {
 } from '../../src/formats/xlsx/roundtrip/write-limits';
 import type {
   XlsxDrawing,
+  XlsxSparklineGroup,
   XlsxTable,
   XlsxWorksheet,
 } from '../../src/formats/xlsx/types';
@@ -164,6 +165,36 @@ function structuralDrawing(overrides: Partial<XlsxDrawing> = {}): XlsxDrawing {
       },
     },
     selectionRelation: 'full-sheet',
+    ...overrides,
+  };
+}
+
+function structuralSparklineGroup(
+  overrides: Partial<XlsxSparklineGroup> = {},
+): XlsxSparklineGroup {
+  return {
+    colors: {},
+    dateAxis: false,
+    displayEmptyCellsAs: 'zero',
+    displayHidden: false,
+    displayXAxis: false,
+    first: false,
+    high: false,
+    last: false,
+    low: false,
+    markers: false,
+    maximumAxisType: 'individual',
+    minimumAxisType: 'individual',
+    negative: false,
+    rightToLeft: false,
+    sparklines: [
+      {
+        dataFormula: 'A1:A3',
+        location: 'L10',
+        selectionRelation: 'full-sheet',
+      },
+    ],
+    type: 'line',
     ...overrides,
   };
 }
@@ -1768,6 +1799,7 @@ describe('XLSX cell operation planner', () => {
               },
             }),
           ],
+          sparklineGroups: [structuralSparklineGroup()],
           protectedRanges: [
             {
               name: 'Input',
@@ -1934,6 +1966,12 @@ describe('XLSX cell operation planner', () => {
       from: { column: 13, row: 1 },
       to: { column: 14, row: 22 },
     });
+    expect(transformedLayout.sparklineGroups?.[0]?.sparklines[0]).toMatchObject(
+      {
+        dataFormula: 'A1:A5',
+        location: 'L12',
+      },
+    );
     const deletedSortDocument = structuredClone(referencedDocument);
     const deletedSortSheet = worksheet(deletedSortDocument);
     deletedSortSheet.autoFilter!.sort!.range = {
@@ -2119,7 +2157,7 @@ describe('XLSX cell operation planner', () => {
       replayXlsxCellOperations(
         referencedDocument,
         [layoutOperation],
-        { ...writeLimits, maxReferenceUpdates: 31 },
+        { ...writeLimits, maxReferenceUpdates: 33 },
         readerLimits,
       ),
     ).resolves.toBeDefined();
@@ -2129,14 +2167,14 @@ describe('XLSX cell operation planner', () => {
           replayXlsxCellOperations(
             referencedDocument,
             [layoutOperation],
-            { ...writeLimits, maxReferenceUpdates: 30 },
+            { ...writeLimits, maxReferenceUpdates: 32 },
             readerLimits,
           ),
         )
       ).diagnostic,
     ).toMatchObject({
-      actual: 31,
-      limit: 30,
+      actual: 33,
+      limit: 32,
       limitName: 'maxReferenceUpdates',
     });
     const viewOnlyDocument = structuredClone(snapshot.document);
@@ -2758,8 +2796,19 @@ describe('XLSX cell operation planner', () => {
         (document) => void setSheetField(document, 'slicers', []),
       ],
       [
-        'sparkline-reference',
-        (document) => void setSheetField(document, 'sparklineGroups', []),
+        'sparkline-formula-reference',
+        (document) =>
+          void setSheetField(document, 'sparklineGroups', [
+            structuralSparklineGroup({
+              sparklines: [
+                {
+                  dataFormula: 'SUM(A1:A3)',
+                  location: 'B1',
+                  selectionRelation: 'full-sheet',
+                },
+              ],
+            }),
+          ]),
       ],
       [
         'table-formula-reference',
@@ -2921,6 +2970,89 @@ describe('XLSX cell operation planner', () => {
       code: 'unsupported-edit-operation',
       featureClass: 'drawing-anchor-deletion',
     });
+    for (const [featureClass, dataFormula, location, count] of [
+      ['sparkline-source-deletion', 'A1:A2', 'B3', 2],
+      ['sparkline-location-deletion', 'A1:A3', 'B1', 1],
+    ] as const) {
+      const sparklineDocument = structuredClone(snapshot.document);
+      worksheet(sparklineDocument).sparklineGroups = [
+        structuralSparklineGroup({
+          sparklines: [
+            {
+              dataFormula,
+              location,
+              selectionRelation: 'full-sheet',
+            },
+          ],
+        }),
+      ];
+      expect(
+        (
+          await captureAsync(() =>
+            replayXlsxCellOperations(
+              sparklineDocument,
+              [
+                {
+                  count,
+                  index: 1,
+                  kind: 'delete-rows',
+                  operationId: `delete-${featureClass}`,
+                  sheetKey,
+                },
+              ],
+              writeLimits,
+              readerLimits,
+            ),
+          )
+        ).diagnostic,
+      ).toMatchObject({
+        code: 'unsupported-edit-operation',
+        featureClass,
+      });
+    }
+    const drawingBudgetDocument = structuredClone(snapshot.document);
+    const drawingBudgetSheet = worksheet(drawingBudgetDocument);
+    drawingBudgetSheet.rows = [];
+    delete drawingBudgetSheet.declaredDimension;
+    const absoluteDrawing = structuralDrawing({ kind: 'absolute' });
+    delete absoluteDrawing.from;
+    drawingBudgetSheet.drawings = [absoluteDrawing, structuralDrawing()];
+    await expect(
+      replayXlsxCellOperations(
+        drawingBudgetDocument,
+        [
+          {
+            count: 1,
+            index: 1,
+            kind: 'insert-rows',
+            operationId: 'drawing-reference-budget',
+            sheetKey,
+          },
+        ],
+        { ...writeLimits, maxReferenceUpdates: 1 },
+        readerLimits,
+      ),
+    ).resolves.toBeDefined();
+    expect(
+      (
+        await captureAsync(() =>
+          replayXlsxCellOperations(
+            drawingBudgetDocument,
+            [
+              {
+                count: 1,
+                index: 1,
+                kind: 'insert-rows',
+                operationId: 'drawing-reference-budget',
+                sheetKey,
+              },
+            ],
+            { ...writeLimits, maxReferenceUpdates: 0 },
+            readerLimits,
+          ),
+        )
+      ).diagnostic,
+    ).toMatchObject({ actual: 1, limit: 0, limitName: 'maxReferenceUpdates' });
     const rowWithColumns = structuredClone(snapshot.document);
     worksheet(rowWithColumns).columns.push({ end: 1, start: 1 });
     await expect(

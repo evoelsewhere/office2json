@@ -61,6 +61,7 @@ import {
   patchXlsxCommentVmlAnchors,
 } from './comment-structure-patch';
 import { patchXlsxDrawingStructure } from './drawing-structure-patch';
+import { patchXlsxSparklineStructure } from './sparkline-structure-patch';
 
 export interface XlsxCellEditPackage {
   data: Uint8Array;
@@ -341,8 +342,15 @@ export async function writeXlsxCellEditPackage(
       writeLimits,
       part,
     );
-    const cellPatched = patchXlsxWorksheetPartWithReport(
+    const sparklinePatched = patchXlsxSparklineStructure(
       structuralPatched.data,
+      structuralPatches.get(sheetKey) ?? [],
+      writeLimits,
+      part,
+      sheet.name,
+    );
+    const cellPatched = patchXlsxWorksheetPartWithReport(
+      sparklinePatched.data,
       sheetPatches,
       writeLimits,
       part,
@@ -392,6 +400,7 @@ export async function writeXlsxCellEditPackage(
     }
     patchBytes +=
       structuralPatched.patchBytes +
+      sparklinePatched.patchBytes +
       cellPatched.patchBytes +
       propertyPatched.patchBytes +
       hyperlinkPatched.patchBytes;
@@ -405,6 +414,7 @@ export async function writeXlsxCellEditPackage(
     }
     patchCount +=
       structuralPatched.patchCount +
+      sparklinePatched.patchCount +
       cellPatched.patchCount +
       propertyPatched.patchCount +
       hyperlinkPatched.patchCount;

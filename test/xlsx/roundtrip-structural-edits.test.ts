@@ -13,6 +13,7 @@ import {
   patchXlsxCommentVmlAnchors,
 } from '../../src/formats/xlsx/roundtrip/comment-structure-patch';
 import { patchXlsxDrawingStructure } from '../../src/formats/xlsx/roundtrip/drawing-structure-patch';
+import { patchXlsxSparklineStructure } from '../../src/formats/xlsx/roundtrip/sparkline-structure-patch';
 import { patchXlsxWorksheetStructure } from '../../src/formats/xlsx/roundtrip/worksheet-structure-patch';
 import { defaultXlsxWriteLimits } from '../../src/formats/xlsx/roundtrip/write-limits';
 import {
@@ -676,6 +677,117 @@ describe('XLSX verified structural row and column edits', () => {
     ]);
     await expect(writeXlsxRoundTrip(rowEdit)).rejects.toMatchObject({
       diagnostic: { featureClass: 'unsupported-part', part: drawingPart },
+    });
+  });
+
+  it('keeps supported sparkline sources and locations aligned', async () => {
+    const x14 = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main';
+    const xm = 'http://schemas.microsoft.com/office/excel/2006/main';
+    const sparklineUri = '{05c60535-1f16-4fd2-b633-f4f36f0b64e0}';
+    const source = await createIndependentXlsx({
+      'xl/worksheets/sheet1.xml': `<worksheet xmlns="${XLSX_SPREADSHEET_NS}"><sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row><row r="3"><c r="A3"><v>3</v></c></row></sheetData><extLst><ext uri="${sparklineUri}"><x14:sparklineGroups xmlns:x14="${x14}"><x14:sparklineGroup><x14:sparklines xmlns:xm="${xm}"><x14:sparkline><xm:f>Sheet1!$A$1:$A$3</xm:f><xm:sqref>B1</xm:sqref></x14:sparkline></x14:sparklines></x14:sparklineGroup></x14:sparklineGroups></ext></extLst></worksheet>`,
+    });
+    const snapshot = await readXlsxRoundTrip(source);
+    const sheetKey = snapshot.document.sheets[0]!.key;
+    const operations = [
+      {
+        count: 1,
+        index: 2,
+        kind: 'insert-rows' as const,
+        operationId: 'sparkline-rows',
+        sheetKey,
+      },
+      {
+        count: 1,
+        index: 2,
+        kind: 'insert-columns' as const,
+        operationId: 'sparkline-columns',
+        sheetKey,
+      },
+    ];
+    const edited = await applyXlsxEdits(snapshot, operations);
+    const previewSheet = edited.document.sheets[0]!;
+    expect(previewSheet.kind).toBe('worksheet');
+    if (previewSheet.kind !== 'worksheet') {
+      throw new Error('Expected worksheet');
+    }
+    expect(previewSheet.sparklineGroups?.[0]?.sparklines[0]).toMatchObject({
+      dataFormula: 'Sheet1!$A$1:$A$4',
+      location: 'C1',
+    });
+    const result = await writeXlsxRoundTrip(portable(edited));
+    expect(result.report.level).toBe('R2');
+    expect(
+      result.report.parts
+        .filter((part) => part.disposition === 'patch')
+        .map((part) => part.name),
+    ).toEqual(['xl/worksheets/sheet1.xml']);
+    const parsed = await parseXlsx(result.data, { errorMode: 'strict' });
+    const outputSheet = parsed.sheets[0]!;
+    expect(outputSheet.kind).toBe('worksheet');
+    if (outputSheet.kind !== 'worksheet') throw new Error('Expected worksheet');
+    expect(outputSheet.sparklineGroups?.[0]?.sparklines[0]).toMatchObject({
+      dataFormula: 'Sheet1!$A$1:$A$4',
+      location: 'C1',
+    });
+    const repeated = await writeXlsxRoundTrip(portable(edited));
+    expect(repeated.data).toEqual(result.data);
+    expect(repeated.report).toEqual(result.report);
+    const requests = operations.map(({ count, index, kind, operationId }) => ({
+      count,
+      index,
+      kind,
+      operationId,
+    }));
+    const sourceWorksheet = await (
+      await JSZip.loadAsync(source)
+    )
+      .file('xl/worksheets/sheet1.xml')!
+      .async('uint8array');
+    const worksheetPatch = patchXlsxWorksheetStructure(
+      sourceWorksheet,
+      requests,
+      defaultXlsxWriteLimits(),
+      'xl/worksheets/sheet1.xml',
+    );
+    const sparklinePatch = patchXlsxSparklineStructure(
+      worksheetPatch.data,
+      requests,
+      defaultXlsxWriteLimits(),
+      'xl/worksheets/sheet1.xml',
+      'Sheet1',
+    );
+    const patchBytes = worksheetPatch.patchBytes + sparklinePatch.patchBytes;
+    const patchCount = worksheetPatch.patchCount + sparklinePatch.patchCount;
+    await expect(
+      writeXlsxRoundTrip(portable(edited), {
+        limits: { maxPatchBytes: patchBytes, maxPatchCount: patchCount },
+      }),
+    ).resolves.toMatchObject({ report: { level: 'R2' } });
+    for (const [limitName, limit] of [
+      ['maxPatchBytes', patchBytes - 1],
+      ['maxPatchCount', patchCount - 1],
+    ] as const) {
+      await expect(
+        writeXlsxRoundTrip(portable(edited), {
+          limits: { [limitName]: limit },
+        }),
+      ).rejects.toMatchObject({
+        diagnostic: { code: 'resource-limit-exceeded', limitName },
+      });
+    }
+    await expect(
+      applyXlsxEdits(snapshot, [
+        {
+          count: 3,
+          index: 1,
+          kind: 'delete-rows',
+          operationId: 'delete-sparkline-source',
+          sheetKey,
+        },
+      ]),
+    ).rejects.toMatchObject({
+      diagnostic: { featureClass: 'sparkline-source-deletion' },
     });
   });
 });

@@ -15,6 +15,7 @@ import type {
 import { canonicalXlsxJson } from './canonical-json';
 import { canonicalXlsxSha256 } from './digest';
 import { XlsxWriteError } from './errors';
+import { transformXlsxStructuralSourceFormula } from './formula-reference';
 import {
   transformXlsxStructuralPageBreak,
   transformXlsxStructuralRange,
@@ -307,7 +308,6 @@ function assertStructuralClosure(
     ['pivot-reference', sheet.pivotTables !== undefined],
     ['query-table-reference', sheet.queryTables !== undefined],
     ['slicer-reference', sheet.slicers !== undefined],
-    ['sparkline-reference', sheet.sparklineGroups !== undefined],
     ['timeline-reference', sheet.timelines !== undefined],
   ];
   for (const [featureClass, blocked] of featureBlockers) {
@@ -419,6 +419,36 @@ function assertStructuralClosure(
       transformXlsxStructuralDrawingAnchor(drawing, operation) === null,
     );
   }
+  for (const group of sheet.sparklineGroups ?? []) {
+    for (const sparkline of group.sparklines) {
+      const formula = transformXlsxStructuralSourceFormula(
+        sparkline.dataFormula,
+        sheet.name,
+        sheet.name,
+        operation,
+      );
+      blockStructuralFeature(
+        operation,
+        'sparkline-formula-reference',
+        formula.kind === 'unsupported',
+      );
+      blockStructuralFeature(
+        operation,
+        'sparkline-source-deletion',
+        formula.kind === 'deleted',
+      );
+      const location = parseXlsxCellReference(sparkline.location)!;
+      blockStructuralFeature(
+        operation,
+        'sparkline-location-deletion',
+        transformXlsxStructuralCell(
+          location.row,
+          location.column,
+          operation,
+        ) === null,
+      );
+    }
+  }
   for (const row of sheet.rows) {
     for (const cell of row.cells) {
       blockStructuralFeature(
@@ -524,6 +554,29 @@ function transformStructuralLayoutReferences(
     ...drawing,
     ...transformXlsxStructuralDrawingAnchor(drawing, operation)!,
   }));
+  if (sheet.sparklineGroups !== undefined) {
+    for (const group of sheet.sparklineGroups) {
+      for (const sparkline of group.sparklines) {
+        const formula = transformXlsxStructuralSourceFormula(
+          sparkline.dataFormula,
+          sheet.name,
+          sheet.name,
+          operation,
+        );
+        const location = parseXlsxCellReference(sparkline.location)!;
+        const supportedFormula = formula as Extract<
+          ReturnType<typeof transformXlsxStructuralSourceFormula>,
+          { expression: string }
+        >;
+        sparkline.dataFormula = supportedFormula.expression;
+        sparkline.location = transformXlsxStructuralCell(
+          location.row,
+          location.column,
+          operation,
+        )!.address;
+      }
+    }
+  }
   const hadDataValidations = sheet.dataValidations.length !== 0;
   sheet.dataValidations = sheet.dataValidations.flatMap((validation) => {
     const ranges = validation.ranges.flatMap((range) => {
@@ -887,7 +940,11 @@ export async function replayXlsxCellOperations(
             (drawing.from === undefined ? 0 : 1) +
             (drawing.to === undefined ? 0 : 1),
           0,
-        );
+        ) +
+        (sheet.sparklineGroups?.reduce(
+          (total, group) => total + group.sparklines.length * 2,
+          0,
+        ) ?? 0);
       transformStructuralLayoutReferences(sheet, operation);
       referenceUpdates += operation.kind.endsWith('-rows')
         ? transformRows(sheet, operation, readerLimits)
