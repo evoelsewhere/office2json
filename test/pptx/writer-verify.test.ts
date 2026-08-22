@@ -946,6 +946,38 @@ describe('PowerPoint creation verification', () => {
   });
 
   it.each([
+    ['missing crop', undefined],
+    ['bottom edge', { b: -19, l: 30, r: 0, t: 10.125 }],
+    ['left edge', { b: -20, l: 31, r: 0, t: 10.125 }],
+    ['right edge', { b: -20, l: 30, r: 1, t: 10.125 }],
+    ['top edge', { b: -20, l: 30, r: 0, t: 11.125 }],
+  ])('rejects native image %s mismatch', async (_name, rect) => {
+    const input = scene([imageSlide('slide-1')]);
+    input.media = [
+      { data: IMAGE_BYTES, key: 'media-1', mimeType: 'image/png' },
+    ];
+    const expected = input.slides[0]?.elements[0];
+    if (expected?.type !== 'image') throw new Error('Expected image scene');
+    expected.crop = { bottom: -20, left: 30, right: 0, top: 10.125 };
+    const output = document(1);
+    output.slides[0]?.elements.push({
+      ...generatedImage(),
+      ...(rect === undefined ? {} : { rect }),
+    });
+
+    await expect(
+      verifyPowerPointCreationWithParser(
+        new Uint8Array(),
+        input,
+        () => Promise.resolve(output),
+        rendered,
+      ),
+    ).rejects.toThrow(
+      'Generated PowerPoint image crop mismatch at slide 1, element 1',
+    );
+  });
+
+  it.each([
     ['missing image', undefined, 'Generated PowerPoint image missing'],
     [
       'media data',
