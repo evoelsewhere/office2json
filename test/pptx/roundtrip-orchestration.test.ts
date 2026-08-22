@@ -100,6 +100,26 @@ describe('PowerPoint patch orchestration', () => {
       'PowerPoint transform target is not a slide-owned text, shape, image, table, chart, or group element',
     );
 
+    (document.slides[0]?.elements[0] as unknown as { type: string }).type =
+      'shape';
+    const cropOperation: PptxRoundTripOperation = {
+      expectedCrop: null,
+      id: 'set-image-crop-1',
+      kind: 'set-image-crop',
+      targetKey: 'slide-1-element-1',
+      value: { bottom: 0, left: 10, right: 0, top: 0 },
+    };
+    await expect(
+      patchPptxOperations(
+        data,
+        document,
+        [cropOperation],
+        resolvePptxResourceLimits(),
+      ),
+    ).rejects.toThrow(
+      'PowerPoint image crop target is not a native image element',
+    );
+
     transformOperation.targetKey = `slide-${'9'.repeat(20)}-element-1`;
     await expect(
       patchPptxOperations(

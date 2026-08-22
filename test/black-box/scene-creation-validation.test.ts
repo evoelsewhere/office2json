@@ -474,7 +474,7 @@ describe('PowerPoint creation scene validation', () => {
       'right',
     ],
     ['low edge', { bottom: -100.001, left: 0, right: 0, top: 0 }, 'bottom'],
-    ['high edge', { bottom: 0, left: 0, right: 0, top: 100.001 }, 'top'],
+    ['high edge', { bottom: -2, left: 0, right: 0, top: 101 }, 'top'],
     ['precision', { bottom: 0, left: 0.0001, right: 0, top: 0 }, 'left'],
   ])('rejects image crop %s', (_name, crop, field) => {
     const scene = creationScene();

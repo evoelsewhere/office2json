@@ -386,6 +386,21 @@ describe('PowerPoint round-trip snapshot contract validation', () => {
     expect(
       validatePptxRoundTripSnapshot(composed, resolvePptxResourceLimits()),
     ).toBe(composed);
+
+    for (const boundary of [
+      { bottom: 0, left: -100, right: 0, top: 0 },
+      { bottom: 0, left: 100, right: -1, top: 0 },
+    ]) {
+      const value = imageCropSnapshot();
+      const operation = value.operations[0];
+      if (operation?.kind !== 'set-image-crop') {
+        throw new Error('Expected crop operation');
+      }
+      operation.value = boundary;
+      expect(
+        validatePptxRoundTripSnapshot(value, resolvePptxResourceLimits()),
+      ).toBe(value);
+    }
   });
 
   it.each([
@@ -418,6 +433,16 @@ describe('PowerPoint round-trip snapshot contract validation', () => {
       'PowerPoint round-trip image crop must change the value',
     ],
     [
+      'invalid expected crop',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.expectedCrop) {
+          delete unknownRecord(operation.expectedCrop).top;
+        }
+      },
+      'PowerPoint round-trip operation 1 expectedCrop is invalid',
+    ],
+    [
       'missing edge',
       (value: PptxRoundTripSnapshot) => {
         const operation = value.operations[0];
@@ -432,7 +457,28 @@ describe('PowerPoint round-trip snapshot contract validation', () => {
       (value: PptxRoundTripSnapshot) => {
         const operation = value.operations[0];
         if (operation?.kind === 'set-image-crop' && operation.value) {
-          operation.value.left = 100.001;
+          operation.value.left = 101;
+          operation.value.right = -2;
+        }
+      },
+      'PowerPoint round-trip operation 1 value is not a valid image crop',
+    ],
+    [
+      'low percentage',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.value) {
+          operation.value.bottom = -100.001;
+        }
+      },
+      'PowerPoint round-trip operation 1 value is not a valid image crop',
+    ],
+    [
+      'excess precision',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.value) {
+          operation.value.left = 0.0001;
         }
       },
       'PowerPoint round-trip operation 1 value is not a valid image crop',
@@ -448,10 +494,64 @@ describe('PowerPoint round-trip snapshot contract validation', () => {
       },
       'PowerPoint round-trip operation 1 value is not a valid image crop',
     ],
+    [
+      'collapsed vertical region',
+      (value: PptxRoundTripSnapshot) => {
+        const operation = value.operations[0];
+        if (operation?.kind === 'set-image-crop' && operation.value) {
+          operation.value.top = 60;
+          operation.value.bottom = 40;
+        }
+      },
+      'PowerPoint round-trip operation 1 value is not a valid image crop',
+    ],
   ])('rejects image crop operation with %s', (_name, mutate, message) => {
     const value = imageCropSnapshot();
     mutate(value);
     expectInvalid(value, 'invalid-snapshot', message);
+  });
+
+  it.each(['bottom', 'left', 'right', 'top'] as const)(
+    'rejects a non-numeric image crop %s edge',
+    (edge) => {
+      const value = imageCropSnapshot();
+      const operation = value.operations[0];
+      if (operation?.kind !== 'set-image-crop' || operation.value === null) {
+        throw new Error('Expected crop operation');
+      }
+      unknownRecord(operation.value)[edge] = '1';
+      expectInvalid(
+        value,
+        'invalid-snapshot',
+        'PowerPoint round-trip operation 1 value is not a valid image crop',
+      );
+    },
+  );
+
+  it('reports the exact index for a malformed second image crop', () => {
+    const value = imageCropSnapshot();
+    const first = value.operations[0];
+    if (first?.kind !== 'set-image-crop') {
+      throw new Error('Expected crop operation');
+    }
+    value.document.slides[0]?.elements.push({
+      authored: {},
+      key: 'image-2',
+      resolved: { hidden: false },
+      type: 'image',
+    });
+    value.operations.push({
+      ...structuredClone(first),
+      expectedCrop: null,
+      id: 'set-image-crop-2',
+      targetKey: 'image-2',
+      value: { bottom: 0, left: 0, right: 0 } as never,
+    });
+    expectInvalid(
+      value,
+      'invalid-snapshot',
+      'PowerPoint round-trip operation 2 value is not a valid image crop',
+    );
   });
 
   it('reports the exact index of a malformed second operation', () => {

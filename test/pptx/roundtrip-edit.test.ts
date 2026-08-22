@@ -9,6 +9,7 @@ import {
   normalizePptxRoundTripTransform,
   replacePptxRoundTripText,
   setPptxRoundTripImageCrop,
+  setPptxRoundTripImageTransform,
   setPptxRoundTripTextTransform,
   validatePptxRoundTripReplaceTextRequest,
 } from '../../src/formats/pptx/roundtrip/edit';
@@ -136,7 +137,7 @@ const IMAGE_BYTES = decodeBase64(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
 );
 
-async function imageSnapshot(cropped = false) {
+async function imageSnapshot(cropped = false, count = 1) {
   const document: PptxSceneDocument = {
     layouts: [],
     masters: [],
@@ -145,20 +146,23 @@ async function imageSnapshot(cropped = false) {
     size: { height: 540, width: 960 },
     slides: [
       {
-        elements: [
-          {
-            authored: {
-              transform: { height: 90, width: 120, x: 20, y: 30 },
+        elements: Array.from({ length: count }, (_, index) => ({
+          authored: {
+            transform: {
+              height: 90,
+              width: 120,
+              x: 20 + index * 140,
+              y: 30,
             },
-            ...(cropped
-              ? { crop: { bottom: -20, left: 30, right: 0, top: 10 } }
-              : {}),
-            key: 'image',
-            mediaKey: 'media',
-            resolved: { hidden: false },
-            type: 'image',
           },
-        ],
+          ...(cropped
+            ? { crop: { bottom: -20, left: 30, right: 0, top: 10 } }
+            : {}),
+          key: `image-${index + 1}`,
+          mediaKey: 'media',
+          resolved: { hidden: false },
+          type: 'image',
+        })),
         key: 'slide',
       },
     ],
@@ -529,9 +533,20 @@ describe('PowerPoint round-trip text edit binding', () => {
       },
     ]);
     expect(added.supportProfile.id).toBe('pptx-roundtrip-native-v1');
-    expect(
-      applyPptxRoundTripOperationsToPreview(added).slides[0]?.elements[0],
-    ).toMatchObject({ crop, type: 'image' });
+    const decoy = structuredClone(added.document.slides[0]?.elements[0]);
+    if (decoy?.type !== 'image') throw new Error('Expected image decoy');
+    decoy.key = 'decoy-image';
+    decoy.crop = { bottom: 0, left: 1, right: 0, top: 0 };
+    added.document.slides[0]?.elements.push(decoy);
+    const addedPreview = applyPptxRoundTripOperationsToPreview(added);
+    expect(addedPreview.slides[0]?.elements[0]).toMatchObject({
+      crop,
+      type: 'image',
+    });
+    expect(addedPreview.slides[0]?.elements[1]).toMatchObject({
+      crop: { bottom: 0, left: 1, right: 0, top: 0 },
+      type: 'image',
+    });
 
     const removed = await setPptxRoundTripImageCrop(await imageSnapshot(true), {
       targetKey: 'slide-1-element-1',
@@ -553,13 +568,24 @@ describe('PowerPoint round-trip text edit binding', () => {
       { bottom: 0, extra: 0, left: 0, right: 0, top: 0 },
       'has an invalid shape',
     ],
+    [{ bottom: 0, extra: 0, left: 0, right: 0 }, 'has an invalid shape'],
+    [{ bottom: 0, left: '1', right: 0, top: 0 }, 'has an invalid percentage'],
+    [
+      { bottom: 0, left: Number.NaN, right: 0, top: 0 },
+      'has an invalid percentage',
+    ],
+    [
+      { bottom: -100.001, left: 0, right: 0, top: 0 },
+      'has an invalid percentage',
+    ],
     [
       { bottom: 0, left: 0.0001, right: 0, top: 0 },
       'has an invalid percentage',
     ],
+    [{ bottom: 0, left: 101, right: -2, top: 0 }, 'has an invalid percentage'],
     [
-      { bottom: 0, left: 100.001, right: 0, top: 0 },
-      'has an invalid percentage',
+      { bottom: 0, left: 60, right: 40, top: 0 },
+      'must leave a positive visible region',
     ],
     [
       { bottom: 50, left: 0, right: 0, top: 50 },
@@ -571,7 +597,30 @@ describe('PowerPoint round-trip text edit binding', () => {
     );
   });
 
+  it.each([
+    { bottom: 0, left: -100, right: 0, top: 0 },
+    { bottom: 0, left: 100, right: -1, top: 0 },
+  ])('accepts exact image crop boundary %j', (value) => {
+    expect(normalizePptxRoundTripImageCrop(value)).toEqual(value);
+  });
+
   it('rejects missing, no-op, and duplicate image crop targets', async () => {
+    await expect(
+      setPptxRoundTripImageCrop(await imageSnapshot(), {
+        targetKey: '',
+        value: { bottom: 0, left: 10, right: 0, top: 0 },
+      }),
+    ).rejects.toThrow(
+      'PowerPoint image crop target key must be a non-empty string',
+    );
+    await expect(
+      setPptxRoundTripImageCrop(await imageSnapshot(), {
+        targetKey: 7 as never,
+        value: { bottom: 0, left: 10, right: 0, top: 0 },
+      }),
+    ).rejects.toThrow(
+      'PowerPoint image crop target key must be a non-empty string',
+    );
     await expect(
       setPptxRoundTripImageCrop(await imageSnapshot(), {
         targetKey: 'missing',
@@ -596,6 +645,44 @@ describe('PowerPoint round-trip text edit binding', () => {
         value: { bottom: 0, left: 20, right: 0, top: 0 },
       }),
     ).rejects.toThrow('PowerPoint image crop target is already scheduled');
+  });
+
+  it('composes crop after transform and crops two image targets independently', async () => {
+    const source = await imageSnapshot(false, 2);
+    const transformed = await setPptxRoundTripImageTransform(source, {
+      targetKey: 'slide-1-element-1',
+      value: { height: 100, width: 130, x: 30, y: 40 },
+    });
+    const first = await setPptxRoundTripImageCrop(transformed, {
+      targetKey: 'slide-1-element-1',
+      value: { bottom: 0, left: 10, right: 0, top: 0 },
+    });
+    const second = await setPptxRoundTripImageCrop(first, {
+      targetKey: 'slide-1-element-2',
+      value: { bottom: 0, left: 20, right: 0, top: 0 },
+    });
+
+    expect(second.operations.map((operation) => operation.kind)).toEqual([
+      'set-transform',
+      'set-image-crop',
+      'set-image-crop',
+    ]);
+  });
+
+  it('rejects a disappeared image crop preview target', async () => {
+    const value = await imageSnapshot();
+    value.operations = [
+      {
+        expectedCrop: null,
+        id: 'set-image-crop-1',
+        kind: 'set-image-crop',
+        targetKey: 'missing-image',
+        value: { bottom: 0, left: 10, right: 0, top: 0 },
+      },
+    ];
+    expect(() => applyPptxRoundTripOperationsToPreview(value)).toThrow(
+      'PowerPoint image crop verification target disappeared: missing-image',
+    );
   });
 
   it.each([null, [], 7])('rejects group transform value %j', (value) => {

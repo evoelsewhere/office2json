@@ -348,7 +348,6 @@ export function normalizePptxRoundTripImageCrop(
   for (const key of keys) {
     const percentage = value[key];
     if (
-      typeof percentage !== 'number' ||
       !Number.isFinite(percentage) ||
       percentage < -100 ||
       percentage > 100 ||
@@ -493,9 +492,7 @@ export async function replacePptxRoundTripText(
   }
   if (
     snapshot.operations.some(
-      (operation) =>
-        operation.kind === 'replace-text' &&
-        operation.targetKey === request.targetKey,
+      (operation) => operation.targetKey === request.targetKey,
     )
   ) {
     invalidEdit('PowerPoint text edit target is already scheduled');

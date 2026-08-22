@@ -307,12 +307,12 @@ function validateImageCrop(
   const crop = exactRecord(value, keys, message);
   for (const key of keys) {
     const percentage = crop[key];
+    if (!Number.isFinite(percentage)) invalidSnapshot(message);
+    const numericPercentage = percentage as number;
     if (
-      typeof percentage !== 'number' ||
-      !Number.isFinite(percentage) ||
-      percentage < -100 ||
-      percentage > 100 ||
-      !Number.isSafeInteger(percentage * 1_000)
+      numericPercentage < -100 ||
+      numericPercentage > 100 ||
+      !Number.isSafeInteger(numericPercentage * 1_000)
     ) {
       invalidSnapshot(message);
     }
