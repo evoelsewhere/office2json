@@ -460,6 +460,49 @@ describe('PowerPoint creation scene validation', () => {
     expect(validateNativeCreation(scene)).toEqual({ issues: [], valid: true });
   });
 
+  it.each([
+    { bottom: 0, left: -100, right: 0, top: 0 },
+    { bottom: 0, left: 100, right: -1, top: 0 },
+  ])('accepts exact native image crop boundary %j', (crop) => {
+    const scene = creationScene();
+    const image = addNativeImage(scene);
+    image.crop = crop;
+
+    expect(validateNativeCreation(scene)).toEqual({ issues: [], valid: true });
+  });
+
+  it('reports exact quantization and native crop range messages', () => {
+    const quantizedScene = creationScene();
+    const quantized = addNativeImage(quantizedScene);
+    quantized.crop = { bottom: 0, left: 0.0001, right: 0, top: 0 };
+    expect(validateNativeCreation(quantizedScene).issues).toContainEqual({
+      code: 'invalid-numeric-value',
+      message:
+        'Image crop must be a finite percentage with at most three decimal places',
+      path: '$.slides[0].elements[0].crop.left',
+    });
+
+    const rangeScene = creationScene();
+    const ranged = addNativeImage(rangeScene);
+    ranged.crop = { bottom: 0, left: 101, right: -2, top: 0 };
+    expect(validateNativeCreation(rangeScene).issues).toContainEqual({
+      code: 'invalid-numeric-value',
+      message: 'Native image crop must be from -100 through 100',
+      path: '$.slides[0].elements[0].crop.left',
+    });
+
+    const nonCascadingScene = creationScene();
+    const nonCascading = addNativeImage(nonCascadingScene);
+    nonCascading.crop = { bottom: 0, left: 101, right: 0, top: 0 };
+    expect(validateNativeCreation(nonCascadingScene).issues).toEqual([
+      {
+        code: 'invalid-numeric-value',
+        message: 'Native image crop must be from -100 through 100',
+        path: '$.slides[0].elements[0].crop.left',
+      },
+    ]);
+  });
+
   it('preserves finite source crops outside the native write profile', () => {
     const scene = creationScene();
     const image = addNativeImage(scene);

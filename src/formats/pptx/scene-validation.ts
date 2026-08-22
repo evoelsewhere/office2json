@@ -24,7 +24,6 @@ const EMUS_PER_POINT = 12_700;
 const ANGLE_UNITS_PER_DEGREE = 60_000;
 const FONT_SIZE_UNITS_PER_POINT = 100;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const CROP_QUANTIZATION_EPSILON = 1e-7;
 const CHART_TYPES = [
   'barChart',
   'doughnutChart',
@@ -36,13 +35,9 @@ type ValidationProfile = NonNullable<PptxSceneValidationOptions['profile']>;
 type CreationValidationProfile = Exclude<ValidationProfile, 'scene'>;
 
 export function isRepresentablePptxCropPercentage(value: unknown): boolean {
-  if (!Number.isFinite(value)) return false;
-  const scaled = (value as number) * 1_000;
-  const rounded = Math.round(scaled);
-  return (
-    Number.isSafeInteger(rounded) &&
-    Math.abs(scaled - rounded) <= CROP_QUANTIZATION_EPSILON
-  );
+  const percentage = value as number;
+  const rounded = Math.round(percentage * 1_000);
+  return Number.isSafeInteger(rounded) && rounded / 1_000 === percentage;
 }
 
 function isCreationProfile(
@@ -863,11 +858,10 @@ function validateImageCrop(
   if (!crop) return;
   const keys = ['bottom', 'left', 'right', 'top'] as const;
   rejectUnknownKeys(crop, keys, path, issues);
-  let valid = true;
+  const issueCount = issues.length;
   for (const key of keys) {
     const percentage = crop[key];
     if (!isRepresentablePptxCropPercentage(percentage)) {
-      valid = false;
       addIssue(
         issues,
         'invalid-numeric-value',
@@ -878,7 +872,6 @@ function validateImageCrop(
       profile !== 'scene' &&
       ((percentage as number) < -100 || (percentage as number) > 100)
     ) {
-      valid = false;
       addIssue(
         issues,
         'invalid-numeric-value',
@@ -887,7 +880,7 @@ function validateImageCrop(
       );
     }
   }
-  if (!valid || profile === 'scene') return;
+  if (issues.length !== issueCount || profile === 'scene') return;
   if (Number(crop.left) + Number(crop.right) >= 100) {
     addIssue(
       issues,
